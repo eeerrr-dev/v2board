@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
 import { Input } from '@v2board/ui/input';
 import { useRedeemGiftCardMutation } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { SectionIcon } from './profile-ui';
 
 const giftCardSchema = z.object({

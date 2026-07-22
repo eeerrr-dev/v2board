@@ -7,7 +7,7 @@ import { useBeforeUnload, useBlocker } from 'react-router';
 import type { AdminConfig, AdminConfigChanges, AdminPlanModel } from '@v2board/types';
 import { getErrorPresentation, hasProblemCode } from '@v2board/api-client';
 import { useSaveSystemConfigMutation } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { Alert, AlertDescription } from '@v2board/ui/alert';
 import {
   AlertDialog,

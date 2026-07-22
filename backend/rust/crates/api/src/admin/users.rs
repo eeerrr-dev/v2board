@@ -7,10 +7,9 @@ use axum::{
 use serde::Deserialize;
 use v2board_api_contract::{
     admin_business::{
-        AdminFilterClause, AdminFilterNumber, AdminFilterOperator, AdminFilterScalar,
-        AdminFilterValue, AdminInviterItem, AdminSetInviterRequest, AdminUserDetail,
-        AdminUserFields, AdminUserFilterRequest, AdminUserGenerateRequest, AdminUserListItem,
-        AdminUserMailRequest, AdminUserPatchRequest, StaffUserDetail, StaffUserPatchRequest,
+        AdminInviterItem, AdminSetInviterRequest, AdminUserDetail, AdminUserFields,
+        AdminUserFilterRequest, AdminUserGenerateRequest, AdminUserListItem, AdminUserMailRequest,
+        AdminUserPatchRequest, StaffUserDetail, StaffUserPatchRequest,
     },
     common::{CreatedInt64Id, Page},
     time::Rfc3339Timestamp,
@@ -20,8 +19,8 @@ use v2board_application::{
         AdminInviter, AdminUser, AdminUserCode, AdminUserDetail as AppAdminUserDetail,
         AdminUserError, AdminUserListItem as AppAdminUserListItem, AdminUserListRequest,
         AdminUserPatchInput, StaffUserDetail as AppStaffUserDetail, StaffUserPatchInput,
-        UserColumnKind, UserFilterClause, UserFilterField, UserFilterOperator, UserFilterValue,
-        UserGenerateInput, UserGenerateOutcome as AppUserGenerateOutcome, UserSort, UserSortField,
+        UserFilterClause, UserFilterField, UserGenerateInput,
+        UserGenerateOutcome as AppUserGenerateOutcome, UserSort, UserSortField,
     },
     auth::AuthUser,
     configuration::{BulkMailInput, MailAudience},
@@ -34,7 +33,11 @@ use crate::{
     runtime::AppState,
 };
 
-use super::{csv_attachment, mail_idempotency_key};
+use super::{
+    csv_attachment,
+    filter_dsl::{parse_filter_query, resolve_filter_clauses},
+    mail_idempotency_key,
+};
 
 /// §8 default for `GET users` (the legacy admin user list default of 10).
 const USER_LIST_DEFAULT_PER_PAGE: i64 = 10;
@@ -107,138 +110,6 @@ pub(super) fn staff_user_detail_item(view: AppStaffUserDetail) -> StaffUserDetai
     }
 }
 
-fn filter_number(value: AdminFilterNumber) -> Result<i64, ApiError> {
-    match value {
-        AdminFilterNumber::Integer(value) => Ok(value),
-        AdminFilterNumber::Unsigned(value) => i64::try_from(value).map_err(|_| {
-            Problem::validation_field("filter", "filter integer is outside the supported range")
-                .into()
-        }),
-        AdminFilterNumber::Decimal(_) => {
-            Err(Problem::validation_field("filter", "filter value must be an integer").into())
-        }
-    }
-}
-
-fn timestamp_filter(field: UserFilterField, value: String) -> Result<i64, ApiError> {
-    chrono::DateTime::parse_from_rfc3339(&value)
-        .map(|instant| instant.timestamp())
-        .map_err(|_| {
-            Problem::validation_field(
-                "filter",
-                format!("{} requires an RFC 3339 timestamp value", field.name()),
-            )
-            .into()
-        })
-}
-
-fn filter_scalar(
-    field: UserFilterField,
-    value: AdminFilterScalar,
-) -> Result<UserFilterValue, ApiError> {
-    match (field.kind(), value) {
-        (UserColumnKind::Boolean, AdminFilterScalar::Bool(value)) => {
-            Ok(UserFilterValue::Boolean(value))
-        }
-        (UserColumnKind::Integer, AdminFilterScalar::Number(value)) => {
-            filter_number(value).map(UserFilterValue::Integer)
-        }
-        (UserColumnKind::Timestamp, AdminFilterScalar::String(value)) => {
-            timestamp_filter(field, value).map(UserFilterValue::Integer)
-        }
-        (UserColumnKind::Text | UserColumnKind::Email, AdminFilterScalar::String(value)) => {
-            Ok(UserFilterValue::Text(value))
-        }
-        _ => Err(Problem::validation_field(
-            "filter",
-            format!("filter value type does not match {}", field.name()),
-        )
-        .into()),
-    }
-}
-
-fn filter_value(
-    field: UserFilterField,
-    value: AdminFilterValue,
-) -> Result<UserFilterValue, ApiError> {
-    match value {
-        AdminFilterValue::Null => Ok(UserFilterValue::Null),
-        AdminFilterValue::Bool(value) => Ok(UserFilterValue::Boolean(value)),
-        AdminFilterValue::Number(value) => filter_number(value).map(UserFilterValue::Integer),
-        AdminFilterValue::String(value) if field.kind() == UserColumnKind::Timestamp => {
-            timestamp_filter(field, value).map(UserFilterValue::Integer)
-        }
-        AdminFilterValue::String(value) => Ok(UserFilterValue::Text(value)),
-        AdminFilterValue::Array(values) => {
-            let values = values
-                .into_iter()
-                .map(|value| filter_scalar(field, value))
-                .collect::<Result<Vec<_>, _>>()?;
-            match field.kind() {
-                UserColumnKind::Boolean => values
-                    .into_iter()
-                    .map(|value| match value {
-                        UserFilterValue::Boolean(value) => Ok(value),
-                        _ => unreachable!(),
-                    })
-                    .collect::<Result<Vec<_>, ApiError>>()
-                    .map(UserFilterValue::Booleans),
-                UserColumnKind::Integer | UserColumnKind::Timestamp => values
-                    .into_iter()
-                    .map(|value| match value {
-                        UserFilterValue::Integer(value) => Ok(value),
-                        _ => unreachable!(),
-                    })
-                    .collect::<Result<Vec<_>, ApiError>>()
-                    .map(UserFilterValue::Integers),
-                UserColumnKind::Text | UserColumnKind::Email => values
-                    .into_iter()
-                    .map(|value| match value {
-                        UserFilterValue::Text(value) => Ok(value),
-                        _ => unreachable!(),
-                    })
-                    .collect::<Result<Vec<_>, ApiError>>()
-                    .map(UserFilterValue::Texts),
-            }
-        }
-    }
-}
-
-fn filter_operator(value: AdminFilterOperator) -> UserFilterOperator {
-    match value {
-        AdminFilterOperator::Eq => UserFilterOperator::Eq,
-        AdminFilterOperator::Neq => UserFilterOperator::Neq,
-        AdminFilterOperator::Like => UserFilterOperator::Like,
-        AdminFilterOperator::Gt => UserFilterOperator::Gt,
-        AdminFilterOperator::Gte => UserFilterOperator::Gte,
-        AdminFilterOperator::Lt => UserFilterOperator::Lt,
-        AdminFilterOperator::Lte => UserFilterOperator::Lte,
-        AdminFilterOperator::In => UserFilterOperator::In,
-    }
-}
-
-fn filter_clauses(
-    clauses: Option<Vec<AdminFilterClause>>,
-) -> Result<Vec<UserFilterClause>, ApiError> {
-    clauses
-        .unwrap_or_default()
-        .into_iter()
-        .map(|clause| {
-            let field = UserFilterField::parse(&clause.field).ok_or_else(|| {
-                ApiError::from(Problem::validation_field(
-                    "filter",
-                    format!("field {} is not filterable", clause.field),
-                ))
-            })?;
-            Ok(UserFilterClause {
-                field,
-                operator: filter_operator(clause.op),
-                value: filter_value(field, clause.value)?,
-            })
-        })
-        .collect()
-}
-
 fn user_generate_request(body: AdminUserGenerateRequest) -> UserGenerateInput {
     UserGenerateInput {
         email_prefix: body.email_prefix,
@@ -299,7 +170,7 @@ pub(super) fn staff_user_patch_request(body: StaffUserPatchRequest) -> StaffUser
 pub(super) fn user_filter_request(
     body: AdminUserFilterRequest,
 ) -> Result<Vec<UserFilterClause>, ApiError> {
-    filter_clauses(body.filter)
+    resolve_filter_clauses(body.filter.unwrap_or_default())
 }
 
 pub(super) fn admin_user_error(error: AdminUserError) -> ApiError {
@@ -330,10 +201,7 @@ pub(super) fn user_mail_request(body: AdminUserMailRequest) -> Result<BulkMailIn
     Ok(BulkMailInput {
         subject: body.subject,
         content: body.content,
-        filter: body
-            .filter
-            .map(|clauses| filter_clauses(Some(clauses)))
-            .transpose()?,
+        filter: body.filter.map(resolve_filter_clauses).transpose()?,
     })
 }
 
@@ -356,18 +224,7 @@ pub(super) async fn users_list(
 ) -> Result<Json<Page<AdminUserListItem>>, Problem> {
     let locale = request_locale(&headers);
     let pagination = Pagination::resolve(query.page, query.per_page, USER_LIST_DEFAULT_PER_PAGE)?;
-    let filters = query
-        .filter
-        .map(|raw| {
-            serde_json::from_str::<Vec<AdminFilterClause>>(&raw).map_err(|error| {
-                ApiError::from(Problem::validation_field(
-                    "filter",
-                    format!("filter must be a JSON clause array: {error}"),
-                ))
-            })
-        })
-        .transpose()
-        .and_then(filter_clauses)
+    let filters = parse_filter_query::<UserFilterField>(query.filter.as_deref())
         .map_err(|error| problem_from(error, locale))?;
     let sort_field = query.sort_by.as_deref().unwrap_or("created_at");
     let sort_field = UserSortField::parse(sort_field).ok_or_else(|| {

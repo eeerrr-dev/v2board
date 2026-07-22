@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@v2board/ui/alert';
 import { Button } from '@v2board/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import { useResetSubscribeMutation } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { ProfileConfirmDialog, SectionIcon } from './profile-ui';
 
 export function ResetSubscribeCard({ className }: { className?: string }) {

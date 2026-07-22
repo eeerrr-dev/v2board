@@ -4099,8 +4099,6 @@ dependencies = [
  "md5",
  "openssl",
  "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "percent-encoding",
  "quick-xml",
  "redis",
@@ -4108,7 +4106,6 @@ dependencies = [
  "reqwest",
  "rmp-serde",
  "rust_decimal",
- "sentry",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -4121,7 +4118,6 @@ dependencies = [
  "tower-http 0.7.0",
  "tracing",
  "tracing-opentelemetry",
- "tracing-subscriber",
  "url",
  "uuid",
  "v2board-analytics",
@@ -4140,6 +4136,7 @@ dependencies = [
  "v2board-redis-adapters",
  "v2board-server-adapters",
  "v2board-subscription-adapters",
+ "v2board-telemetry",
 ]
 
 [[package]]
@@ -4476,6 +4473,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "v2board-telemetry"
+version = "0.9.0"
+dependencies = [
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "sentry",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "v2board-workers"
 version = "0.9.0"
 dependencies = [
@@ -4483,17 +4494,10 @@ dependencies = [
  "arc-swap",
  "chrono",
  "cron",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "redis",
- "sentry",
  "sqlx",
  "tokio",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
  "uuid",
  "v2board-analytics",
  "v2board-application",
@@ -4504,6 +4508,7 @@ dependencies = [
  "v2board-mail-adapters",
  "v2board-order-adapters",
  "v2board-redis-adapters",
+ "v2board-telemetry",
 ]
 
 [[package]]

@@ -55,7 +55,7 @@ import {
   useSortServerNodesMutation,
   useUpdateServerMutation,
 } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import {
   NODE_TYPE_FILTERS,
   SERVER_TYPES,

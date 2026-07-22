@@ -10,6 +10,7 @@ const roots = [
   'apps/user/src',
   'apps/admin/src',
   'packages/api-client/src',
+  'packages/app-shell/src',
   'packages/config/src',
   'packages/i18n/src',
   'packages/types/src',

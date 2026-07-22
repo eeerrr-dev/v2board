@@ -283,16 +283,16 @@ There is one offline `mysql-import.v1` path:
 3. On the stopped old production host, lifecycle uses a dedicated `SELECT`-only account to establish one
    `REPEATABLE READ`, `READ ONLY`, consistent snapshot of the original MySQL database; it rejects extra
    grants/roles/`GRANT OPTION` and requires InnoDB for every imported table.
-4. The converter runs one primary-key-ordered streaming MySQL `SELECT` per retained table; memory is bounded
-   to the current decoded row, byte-bounded send buffers, and a hard-capped 4,096-entry payment-id
-   classification index required by the fixed Stripe order policy. It explicitly validates/transforms each row and
+4. The converter runs one primary-key-ordered streaming MySQL `SELECT` per retained table with a bounded
+   per-row memory footprint (see below), explicitly validates/transforms each row, and
    gives every target table exactly one PostgreSQL `COPY FROM STDIN` stream over the
    same-datacenter private network into a brand-new PostgreSQL 18 database. After all tables complete COPY,
    it creates deferred business/cross-row unique constraints, secondary indexes, and foreign keys, resets
    sequences, runs `ANALYZE`, and performs
    exactly one whole-table canonical verification per retained target table in primary-key order. The gift-card
-   source stream deterministically feeds both its base and derived redemption targets. ClickHouse
-   starts without old events; the dedicated Redis 8.8 target starts empty with `/0`, `noeviction`, a
+   source stream deterministically feeds both its base and derived redemption targets. ClickHouse's
+   manifest-specified target database and principals must not already exist before `execute` runs (so it
+   starts without old events); the dedicated Redis 8.8 target starts empty with `/0`, `noeviction`, a
    disabled default user and a writable external `aclfile`.
 5. The importer generates the API and worker configs plus an import report under the old host's
    root-owned `config_output_directory` from explicit `target` and `runtime` values.
@@ -302,12 +302,13 @@ There is one offline `mysql-import.v1` path:
 The converter runs on the stopped old production host and reaches the source only through the manifest's
 loopback-only `source.database_url`. The dump is never loaded for conversion and MySQL SQL is never sent to
 PostgreSQL. The converter connects outbound to the new PostgreSQL target with a temporary migration
-principal using authenticated TLS over the same-datacenter private network. Its bounded MySQL buffers are
-only flow control, not fixed 1,000-row PostgreSQL batches; it has no bulk-`INSERT` fallback and writes no
-intermediate COPY/CSV transfer files. Canonical expectations are accumulated during typed conversion and
-compared with the one post-load PK-ordered full scan of each target table; there is no per-batch target
-verification or second transfer strategy. The new production machine never runs MySQL. Legacy source tables keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables
-are unprefixed (`users` and `orders` avoid PostgreSQL keyword conflicts).
+principal using authenticated TLS over the same-datacenter private network. The new production machine never
+runs MySQL. Legacy source tables keep their `v2_*` names, while native PostgreSQL/ClickHouse target tables
+are unprefixed (`users` and `orders` avoid PostgreSQL keyword conflicts). The exact memory bound (current
+decoded row, byte-bounded send buffers, and a hard-capped 4,096-entry payment-id classification index),
+the ban on bulk-`INSERT`/batching/intermediate transfer files, and the full canonical-verification contract
+are pinned in [`docs/mysql-import-invariants.md`](../docs/mysql-import-invariants.md); this section is a
+summary, not the source of truth for those numbers.
 
 Run the disposable utility on the stopped old host after the dump and read-only source account are ready:
 

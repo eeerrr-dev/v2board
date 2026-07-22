@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation } from 'react-router';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@v2board/ui/button';
-import { reportBoundaryError } from '@/lib/error-reporting';
+import { reportBoundaryError } from '@v2board/app-shell/error-reporting';
+import { getSentryDsn } from '@/lib/runtime-config';
 
 interface RouteErrorBoundaryProps {
   children: ReactNode;
@@ -32,7 +33,7 @@ export class RouteErrorBoundary extends Component<
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error(error, errorInfo);
-    reportBoundaryError(error, errorInfo.componentStack);
+    reportBoundaryError(getSentryDsn, error, errorInfo.componentStack);
   }
 
   override render() {

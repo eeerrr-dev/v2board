@@ -78,6 +78,47 @@ infrastructure-owned). Additionally run:
   connector's own health is visible in the Cloudflare dashboard (Tunnel
   status) and `journalctl -u v2board-cloudflared`.
 
+### 1.4 Optional error reporting and trace export
+
+Sentry error reporting and OTLP span export are implemented in
+`backend/rust/crates/telemetry` (shared by `v2board-api` and `v2board-worker`)
+and, for the browser, in `frontend/apps/{user,admin}/src/lib/sentry.ts`. All
+three controls are environment variables, entirely off by default, and an
+invalid value logs a warning and stays off rather than failing the service —
+none are secrets baked into a release artifact, and none are required for a
+working deployment.
+
+| Variable | Read by | Controls | Source the value from |
+| --- | --- | --- | --- |
+| `V2BOARD_SENTRY_DSN` | `v2board-api`, `v2board-worker` (`v2board_telemetry::init_tracing`) | Sentry error reporting for backend panics/`tracing::error!` events. Sets the Sentry `environment` tag to `production`/`local` from the same `production` flag that selects JSON vs. human-readable log output. | Sentry project → Settings → Client Keys (DSN), for a server-side (Rust) project. |
+| `V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT` | `v2board-api`, `v2board-worker` (`v2board_telemetry::init_tracing`) | OTLP HTTP span export (batched, `protobuf` over HTTP). Accepts the collector's base URL (e.g. `http://127.0.0.1:4318`) or a full `.../v1/traces` URL; also enables W3C `traceparent` propagation on incoming requests. | Your OTLP-compatible tracing backend (e.g. an OpenTelemetry Collector, Grafana Tempo, Honeycomb) — its documented OTLP/HTTP traces endpoint. |
+| `V2BOARD_FRONTEND_SENTRY_DSN` | `v2board-api` only (`backend/rust/crates/api/src/frontend.rs`) | Browser-side Sentry error reporting for both SPAs. The API injects the DSN into each app's runtime config and widens the document CSP `connect-src` to the DSN's ingest origin; the DSN never touches the frontend build. Requires a public key (URL username) and an `http(s)` ingest host, or it is treated as absent. | Sentry project → Settings → Client Keys (DSN), for a browser (JavaScript/React) project — typically a separate Sentry project from the backend's. |
+
+`v2board-worker.service` has no frontend to report from, so it only ever reads
+the first two. Set these only on the units that need them; a service unit with
+none of its telemetry variables set runs exactly as today, with tracing/log
+output only.
+
+Example — enable all backend telemetry on `v2board-api.service` and error
+reporting only on `v2board-worker.service`, via each unit's
+`[Service]` block (either edit the tracked file under
+`deploy/systemd/` before install, or use `systemctl edit
+<unit>` to add a drop-in on the host):
+
+```ini
+# deploy/systemd/v2board-api.service
+[Service]
+Environment=V2BOARD_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project-id>
+Environment=V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+Environment=V2BOARD_FRONTEND_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<frontend-project-id>
+```
+
+```ini
+# deploy/systemd/v2board-worker.service
+[Service]
+Environment=V2BOARD_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project-id>
+```
+
 ## 2. Backups
 
 What must survive the loss of the production host, and how:

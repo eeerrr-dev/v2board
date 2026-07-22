@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use argon2::{
     Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString,
@@ -72,20 +72,48 @@ pub fn verify_password(
     match algo {
         Some("md5") => {
             let digest = md5::compute(password);
-            verify_legacy_password_hex(&digest.0, stored_hash)
+            let matched = verify_legacy_password_hex(&digest.0, stored_hash);
+            pad_legacy_verification_cost(password);
+            matched
         }
         Some("sha256") => {
             let mut hasher = Sha256::new();
             hasher.update(password.as_bytes());
-            verify_legacy_password_hex(&hasher.finalize(), stored_hash)
+            let matched = verify_legacy_password_hex(&hasher.finalize(), stored_hash);
+            pad_legacy_verification_cost(password);
+            matched
         }
         Some("md5salt") => {
             let salt = salt.unwrap_or_default();
             let digest = md5::compute(format!("{password}{salt}"));
-            verify_legacy_password_hex(&digest.0, stored_hash)
+            let matched = verify_legacy_password_hex(&digest.0, stored_hash);
+            pad_legacy_verification_cost(password);
+            matched
         }
         _ => verify_modern_password(password, stored_hash),
     }
+}
+
+/// Not-yet-migrated accounts are still verified against a cheap legacy digest
+/// (md5/sha256), which finishes orders of magnitude faster than the Argon2/bcrypt
+/// path used for migrated accounts. Left alone, that gap is a response-time
+/// side channel that lets an attacker distinguish legacy-hashed accounts from
+/// modern-hashed ones without needing the password at all, and it persists
+/// indefinitely because the legacy hash is only replaced on a successful login.
+///
+/// Pad every legacy verification (match or mismatch) with an extra Argon2
+/// verification of the same cost as the modern path, discarding its result, so
+/// the observable latency of the legacy branch tracks the modern branch.
+fn pad_legacy_verification_cost(password: &str) {
+    let _ = verify_modern_password(password, legacy_padding_hash());
+}
+
+fn legacy_padding_hash() -> &'static str {
+    static LEGACY_PADDING_HASH: OnceLock<String> = OnceLock::new();
+    LEGACY_PADDING_HASH.get_or_init(|| {
+        hash_password("v2board-legacy-padding-not-an-account")
+            .expect("legacy padding hash must be computable")
+    })
 }
 
 fn verify_legacy_password_hex(expected: &[u8], stored_hash: &str) -> bool {
@@ -196,6 +224,45 @@ mod tests {
             password,
             &sha256.to_ascii_uppercase()
         ));
+    }
+
+    #[test]
+    fn legacy_verification_is_padded_to_modern_cost_for_both_outcomes() {
+        use std::time::{Duration, Instant};
+
+        let password = "legacy-password";
+        let md5 = format!("{:x}", md5::compute(password));
+
+        // Warm the lazily-initialized padding hash so its one-time Argon2 hash
+        // cost is not counted against either measurement below.
+        assert!(verify_password(Some("md5"), None, password, &md5));
+
+        let time_it = |matching: bool| -> Duration {
+            let stored = if matching { md5.as_str() } else { "00" };
+            let started = Instant::now();
+            let matched = verify_password(Some("md5"), None, password, stored);
+            assert_eq!(matched, matching);
+            started.elapsed()
+        };
+
+        let matched_elapsed = time_it(true);
+        let mismatched_elapsed = time_it(false);
+
+        // Both the legacy-hash-matches and legacy-hash-does-not-match cases now
+        // pay the same extra Argon2 verification, so neither is a cheap,
+        // near-zero-cost branch relative to the other: the mismatch path must
+        // not be dramatically faster than the match path.
+        let ratio =
+            mismatched_elapsed.as_secs_f64().max(1e-9) / matched_elapsed.as_secs_f64().max(1e-9);
+        assert!(
+            (0.2..5.0).contains(&ratio),
+            "legacy match ({matched_elapsed:?}) and mismatch ({mismatched_elapsed:?}) durations diverged too much (ratio {ratio})"
+        );
+
+        // Both legacy verifications should be dominated by the padding Argon2
+        // cost, not the near-instant raw digest comparison.
+        assert!(matched_elapsed >= Duration::from_millis(1));
+        assert!(mismatched_elapsed >= Duration::from_millis(1));
     }
 
     #[tokio::test]

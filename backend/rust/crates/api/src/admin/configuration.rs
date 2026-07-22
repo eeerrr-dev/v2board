@@ -19,8 +19,7 @@ use v2board_api_contract::{
     time::Rfc3339Timestamp,
 };
 use v2board_application::logs::{
-    AuditLogField, AuditLogFilter, AuditLogQuery, SortDirection, SystemLogQuery, SystemLogSort,
-    TextPredicate,
+    AuditLogField, AuditLogQuery, SortDirection, SystemLogField, SystemLogQuery, SystemLogSort,
 };
 use v2board_application::{
     auth::AuthUser,
@@ -38,6 +37,8 @@ use crate::{
     locale::request_locale,
     runtime::AppState,
 };
+
+use super::filter_dsl::parse_filter_query;
 
 /// §8 default for `GET system/logs` (the legacy admin list default).
 const SYSTEM_LOGS_DEFAULT_PER_PAGE: i64 = 10;
@@ -502,112 +503,6 @@ pub(super) struct SystemLogsQuery {
     sort_dir: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TextFilterClause {
-    field: String,
-    op: TextFilterOperation,
-    value: Value,
-}
-
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum TextFilterOperation {
-    Eq,
-    Neq,
-    Like,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    In,
-}
-
-fn parse_text_filters(
-    raw: Option<&str>,
-    allowed_fields: &[&str],
-) -> Result<Vec<(String, TextPredicate)>, Problem> {
-    let Some(raw) = raw else {
-        return Ok(Vec::new());
-    };
-    let clauses = serde_json::from_str::<Vec<TextFilterClause>>(raw).map_err(|error| {
-        Problem::validation_field(
-            "filter",
-            format!("filter must be a JSON clause array: {error}"),
-        )
-    })?;
-    clauses
-        .into_iter()
-        .map(|clause| {
-            if !allowed_fields.contains(&clause.field.as_str()) {
-                return Err(Problem::validation_field(
-                    "filter",
-                    format!("field {} is not filterable", clause.field),
-                ));
-            }
-            let predicate = match (clause.op, clause.value) {
-                (TextFilterOperation::Eq, Value::Null) => TextPredicate::IsNull,
-                (TextFilterOperation::Neq, Value::Null) => TextPredicate::IsNotNull,
-                (TextFilterOperation::Eq, Value::String(value)) => TextPredicate::Equal(value),
-                (TextFilterOperation::Neq, Value::String(value)) => TextPredicate::NotEqual(value),
-                (TextFilterOperation::Like, Value::String(value)) => TextPredicate::Contains(value),
-                (TextFilterOperation::In, Value::Array(values)) if !values.is_empty() => {
-                    let values = values
-                        .into_iter()
-                        .map(|value| {
-                            value.as_str().map(str::to_owned).ok_or_else(|| {
-                                Problem::validation_field(
-                                    "filter",
-                                    format!(
-                                        "in on {} requires string array elements",
-                                        clause.field
-                                    ),
-                                )
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    TextPredicate::In(values)
-                }
-                (TextFilterOperation::In, _) => {
-                    return Err(Problem::validation_field(
-                        "filter",
-                        format!("in on {} requires a non-empty array value", clause.field),
-                    ));
-                }
-                (
-                    TextFilterOperation::Gt
-                    | TextFilterOperation::Gte
-                    | TextFilterOperation::Lt
-                    | TextFilterOperation::Lte,
-                    _,
-                ) => {
-                    return Err(Problem::validation_field(
-                        "filter",
-                        format!("range comparison is not supported on {}", clause.field),
-                    ));
-                }
-                (operation, _) => {
-                    let operation = match operation {
-                        TextFilterOperation::Eq => "eq",
-                        TextFilterOperation::Neq => "neq",
-                        TextFilterOperation::Like => "like",
-                        TextFilterOperation::In => "in",
-                        TextFilterOperation::Gt
-                        | TextFilterOperation::Gte
-                        | TextFilterOperation::Lt
-                        | TextFilterOperation::Lte => unreachable!(),
-                    };
-                    return Err(Problem::validation_field(
-                        "filter",
-                        format!("{operation} on {} requires a string value", clause.field),
-                    ));
-                }
-            };
-            Ok((clause.field, predicate))
-        })
-        .collect()
-}
-
 fn sort_direction(value: Option<&str>) -> Result<SortDirection, Problem> {
     match value {
         None | Some("desc") => Ok(SortDirection::Descending),
@@ -628,10 +523,8 @@ pub(super) async fn system_logs(
 ) -> Result<Json<Page<SystemLogView>>, Problem> {
     let locale = request_locale(&headers);
     let pagination = Pagination::resolve(query.page, query.per_page, SYSTEM_LOGS_DEFAULT_PER_PAGE)?;
-    let level = parse_text_filters(query.filter.as_deref(), &["level"])?
-        .into_iter()
-        .map(|(_, predicate)| predicate)
-        .collect();
+    let level = parse_filter_query::<SystemLogField>(query.filter.as_deref())
+        .map_err(|error| problem_from(error, locale))?;
     let sort = match query.sort_by.as_deref() {
         None | Some("created_at") => SystemLogSort::CreatedAt,
         Some("level") => SystemLogSort::Level,
@@ -692,21 +585,8 @@ pub(super) async fn audit_logs(
             ),
         ));
     }
-    let filters = parse_text_filters(
-        query.filter.as_deref(),
-        &["surface", "actor_email", "method"],
-    )?
-    .into_iter()
-    .map(|(field, predicate)| AuditLogFilter {
-        field: match field.as_str() {
-            "surface" => AuditLogField::Surface,
-            "actor_email" => AuditLogField::ActorEmail,
-            "method" => AuditLogField::Method,
-            _ => unreachable!("filter whitelist and field mapping diverged"),
-        },
-        predicate,
-    })
-    .collect();
+    let filters = parse_filter_query::<AuditLogField>(query.filter.as_deref())
+        .map_err(|error| problem_from(error, locale))?;
     let (items, total) = state
         .log_service()
         .audit_logs(AuditLogQuery {
@@ -738,43 +618,63 @@ pub(super) async fn audit_logs(
 
 #[cfg(test)]
 mod log_query_tests {
+    use v2board_application::filter_dsl::{FilterClause, FilterOperator, FilterValue};
+
     use super::*;
 
     #[test]
-    fn text_filter_parser_is_closed_and_preserves_literal_like_values() {
-        let filters = parse_text_filters(
-            Some(
-                r#"[{"field":"level","op":"like","value":"50%_"},{"field":"level","op":"in","value":["info","warn"]}]"#,
-            ),
-            &["level"],
-        )
+    fn system_log_filter_is_closed_to_level_and_preserves_literal_like_values() {
+        let filters = parse_filter_query::<SystemLogField>(Some(
+            r#"[{"field":"level","op":"like","value":"50%_"},{"field":"level","op":"in","value":["info","warn"]}]"#,
+        ))
         .unwrap();
         assert_eq!(
             filters,
             vec![
-                (
-                    "level".to_string(),
-                    TextPredicate::Contains("50%_".to_string())
-                ),
-                (
-                    "level".to_string(),
-                    TextPredicate::In(vec!["info".to_string(), "warn".to_string()]),
-                ),
+                FilterClause {
+                    field: SystemLogField::Level,
+                    operator: FilterOperator::Like,
+                    value: FilterValue::Text("50%_".to_string()),
+                },
+                FilterClause {
+                    field: SystemLogField::Level,
+                    operator: FilterOperator::In,
+                    value: FilterValue::Texts(vec!["info".to_string(), "warn".to_string()]),
+                },
             ]
         );
-        assert!(parse_text_filters(Some("not-json"), &["level"]).is_err());
+        assert!(parse_filter_query::<SystemLogField>(Some("not-json")).is_err());
         assert!(
-            parse_text_filters(
-                Some(r#"[{"field":"password","op":"eq","value":"x"}]"#),
-                &["level"],
-            )
+            parse_filter_query::<SystemLogField>(Some(
+                r#"[{"field":"password","op":"eq","value":"x"}]"#
+            ))
             .is_err()
         );
         assert!(
-            parse_text_filters(
-                Some(r#"[{"field":"level","op":"gt","value":"info"}]"#),
-                &["level"],
-            )
+            parse_filter_query::<SystemLogField>(Some(
+                r#"[{"field":"level","op":"gt","value":"info"}]"#
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn audit_log_filter_is_closed_to_its_three_field_whitelist() {
+        assert_eq!(
+            parse_filter_query::<AuditLogField>(Some(
+                r#"[{"field":"surface","op":"eq","value":"admin"}]"#
+            ))
+            .unwrap(),
+            vec![FilterClause {
+                field: AuditLogField::Surface,
+                operator: FilterOperator::Eq,
+                value: FilterValue::Text("admin".to_string()),
+            }]
+        );
+        assert!(
+            parse_filter_query::<AuditLogField>(Some(
+                r#"[{"field":"level","op":"eq","value":"info"}]"#
+            ))
             .is_err()
         );
     }

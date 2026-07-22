@@ -35,7 +35,7 @@ import {
 import { UserManageDrawer } from '@/components/user-manage-drawer';
 import { UserTrafficModal } from '@/components/user-traffic-modal';
 import { confirmDialog } from '@v2board/ui/confirm-dialog';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { Button } from '@v2board/ui/button';
 import { Card, CardContent } from '@v2board/ui/card';
 import {

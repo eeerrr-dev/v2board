@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::plan::{
     CreatePlanOutcome, DeletePlanOutcome, NewPlan, PatchPlanOutcome, PlanChanges, PlanReference,
     PlanRepository,
@@ -14,13 +14,13 @@ const ORIGINAL_GROUP_ID: i32 = 2_000_000_041;
 const UPDATED_GROUP_ID: i32 = 2_000_000_042;
 const USER_ID: i64 = 2_000_000_041;
 
-#[tokio::test]
-async fn postgres_adapter_runs_the_complete_plan_lifecycle_and_force_propagation() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    reset_fixture(&pool).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixed fixture ids below can
+// no longer collide across tests or files and no longer need hand-written
+// DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn postgres_adapter_runs_the_complete_plan_lifecycle_and_force_propagation(pool: PgPool) {
     insert_group(&pool, ORIGINAL_GROUP_ID, "plan-repository-original").await;
     insert_group(&pool, UPDATED_GROUP_ID, "plan-repository-updated").await;
 
@@ -127,21 +127,6 @@ async fn postgres_adapter_runs_the_complete_plan_lifecycle_and_force_propagation
             .expect("delete the unreferenced plan"),
         DeletePlanOutcome::Deleted
     );
-
-    reset_fixture(&pool).await;
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline before the repository regression");
-    pool
 }
 
 async fn insert_group(pool: &PgPool, id: i32, name: &str) {
@@ -173,22 +158,4 @@ async fn insert_user(pool: &PgPool, plan_id: i32) {
     .execute(pool)
     .await
     .expect("insert plan repository user");
-}
-
-async fn reset_fixture(pool: &PgPool) {
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(USER_ID)
-        .execute(pool)
-        .await
-        .expect("remove plan repository user");
-    sqlx::query("DELETE FROM plan WHERE group_id = ANY($1::integer[])")
-        .bind(vec![ORIGINAL_GROUP_ID, UPDATED_GROUP_ID])
-        .execute(pool)
-        .await
-        .expect("remove plan repository plans");
-    sqlx::query("DELETE FROM server_group WHERE id = ANY($1::integer[])")
-        .bind(vec![ORIGINAL_GROUP_ID, UPDATED_GROUP_ID])
-        .execute(pool)
-        .await
-        .expect("remove plan repository groups");
 }

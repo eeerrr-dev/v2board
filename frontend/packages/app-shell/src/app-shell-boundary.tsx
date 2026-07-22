@@ -1,8 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { reportBoundaryError } from '@/lib/error-reporting';
+import { reportBoundaryError } from './error-reporting';
 
 interface AppShellBoundaryProps {
   children: ReactNode;
+  /**
+   * Each app injects its own Sentry DSN reader (backed by its own
+   * runtime-config module); see `./error-reporting`.
+   */
+  getSentryDsn: () => string | undefined;
 }
 
 interface AppShellBoundaryState {
@@ -25,7 +30,7 @@ export class AppShellBoundary extends Component<AppShellBoundaryProps, AppShellB
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error(error, errorInfo);
-    reportBoundaryError(error, errorInfo.componentStack);
+    reportBoundaryError(this.props.getSentryDsn, error, errorInfo.componentStack);
   }
 
   override render() {

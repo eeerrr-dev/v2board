@@ -188,7 +188,7 @@ vi.mock('react-router', async () => {
   };
 });
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     success: mocks.toastSuccess,
     error: mocks.toastError,

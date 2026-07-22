@@ -24,6 +24,7 @@ use crate::{
 mod commerce;
 mod configuration;
 mod content;
+mod filter_dsl;
 mod servers;
 mod statistics;
 mod support;

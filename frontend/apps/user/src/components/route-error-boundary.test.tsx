@@ -1,10 +1,11 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
+import { getSentryDsn } from '@/lib/runtime-config';
 import { RouteErrorBoundary } from './route-error-boundary';
 
 const reportBoundaryError = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/error-reporting', () => ({ reportBoundaryError }));
+vi.mock('@v2board/app-shell/error-reporting', () => ({ reportBoundaryError }));
 
 function Crash(): never {
   throw new Error('route crashed');
@@ -24,6 +25,7 @@ describe('RouteErrorBoundary white-screen guard', () => {
     const failedLabel = i18n!.t(($) => $.common.route_load_failed);
     expect(screen.getByRole('alert')).toHaveTextContent(failedLabel);
     expect(reportBoundaryError).toHaveBeenCalledWith(
+      getSentryDsn,
       expect.objectContaining({ message: 'route crashed' }),
       expect.any(String),
     );

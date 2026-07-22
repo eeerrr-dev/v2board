@@ -6,10 +6,11 @@ use v2board_application::{
         AdminUserRepository, BanUsersOutcome, CreateUsersCommand, CreateUsersOutcome,
         CreatedAccount, DeleteUsersOutcome, RepositoryResult, RepositoryUserPage,
         SetInviterOutcome, StaffUserChanges, UserExportPage, UserExportRow, UserFilterClause,
-        UserFilterField, UserFilterOperator, UserFilterValue, UserSecret, UserSortField,
-        UserUpdateOutcome,
+        UserFilterField, UserSecret, UserSortField, UserUpdateOutcome,
     },
 };
+
+use crate::filter_dsl::push_filters;
 
 const USER_DELETE_SQL_BATCH_SIZE: usize = 500;
 
@@ -188,130 +189,11 @@ const fn sort_expression(field: UserSortField) -> &'static str {
     }
 }
 
-fn escape_like(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len() + 2);
-    escaped.push('%');
-    for character in value.chars() {
-        if matches!(character, '%' | '_' | '\\') {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    escaped.push('%');
-    escaped
-}
-
-/// Appends a validated closed user-filter set to a PostgreSQL query.
-/// Column expressions are code-owned and every request value is bound.
+/// Appends a validated closed user-filter set to a PostgreSQL query through
+/// the shared table-driven engine (`crate::filter_dsl`): column expressions
+/// are code-owned (`filter_expression`) and every request value is bound.
 pub fn push_user_filters(builder: &mut QueryBuilder<Postgres>, filters: &[UserFilterClause]) {
-    for filter in filters {
-        let expression = filter_expression(filter.field);
-        builder.push(" AND ");
-        match (filter.operator, &filter.value) {
-            (UserFilterOperator::Eq, UserFilterValue::Null) => {
-                builder.push(expression).push(" IS NULL");
-            }
-            (UserFilterOperator::Neq, UserFilterValue::Null) => {
-                builder.push(expression).push(" IS NOT NULL");
-            }
-            (operator @ (UserFilterOperator::Eq | UserFilterOperator::Neq), value) => {
-                let comparison = if operator == UserFilterOperator::Eq {
-                    " = "
-                } else {
-                    " <> "
-                };
-                if filter.field == UserFilterField::Email {
-                    builder.push("lower(btrim(").push(expression).push("))");
-                    builder.push(comparison).push("lower(btrim(");
-                    if let UserFilterValue::Text(value) = value {
-                        builder.push_bind(value.clone());
-                    }
-                    builder.push("))");
-                } else {
-                    builder.push(expression).push(comparison);
-                    push_scalar_bind(builder, value);
-                }
-            }
-            (UserFilterOperator::Like, UserFilterValue::Text(value)) => {
-                builder.push(expression);
-                if matches!(
-                    filter.field.kind(),
-                    v2board_application::admin_user::UserColumnKind::Integer
-                ) {
-                    builder.push("::text");
-                }
-                builder.push(" ILIKE ").push_bind(escape_like(value));
-            }
-            (operator, UserFilterValue::Integer(value))
-                if matches!(
-                    operator,
-                    UserFilterOperator::Gt
-                        | UserFilterOperator::Gte
-                        | UserFilterOperator::Lt
-                        | UserFilterOperator::Lte
-                ) =>
-            {
-                builder.push(expression).push(match operator {
-                    UserFilterOperator::Gt => " > ",
-                    UserFilterOperator::Gte => " >= ",
-                    UserFilterOperator::Lt => " < ",
-                    UserFilterOperator::Lte => " <= ",
-                    _ => unreachable!(),
-                });
-                builder.push_bind(*value);
-            }
-            (UserFilterOperator::In, UserFilterValue::Integers(values)) => {
-                builder
-                    .push(expression)
-                    .push(" = ANY(")
-                    .push_bind(values.clone())
-                    .push(")");
-            }
-            (UserFilterOperator::In, UserFilterValue::Booleans(values)) => {
-                builder
-                    .push(expression)
-                    .push(" = ANY(")
-                    .push_bind(values.clone())
-                    .push(")");
-            }
-            (UserFilterOperator::In, UserFilterValue::Texts(values)) => {
-                if filter.field == UserFilterField::Email {
-                    let values = values
-                        .iter()
-                        .map(|value| value.trim().to_lowercase())
-                        .collect::<Vec<_>>();
-                    builder
-                        .push("lower(btrim(")
-                        .push(expression)
-                        .push(")) = ANY(")
-                        .push_bind(values)
-                        .push(")");
-                } else {
-                    builder
-                        .push(expression)
-                        .push(" = ANY(")
-                        .push_bind(values.clone())
-                        .push(")");
-                }
-            }
-            _ => unreachable!("application validation rejects invalid admin-user filters"),
-        }
-    }
-}
-
-fn push_scalar_bind(builder: &mut QueryBuilder<Postgres>, value: &UserFilterValue) {
-    match value {
-        UserFilterValue::Boolean(value) => {
-            builder.push_bind(*value);
-        }
-        UserFilterValue::Integer(value) => {
-            builder.push_bind(*value);
-        }
-        UserFilterValue::Text(value) => {
-            builder.push_bind(value.clone());
-        }
-        _ => unreachable!("application validation guarantees scalar values"),
-    }
+    push_filters(builder, filters, filter_expression);
 }
 
 fn unique_violation(error: &sqlx::Error) -> bool {

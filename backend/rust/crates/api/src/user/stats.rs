@@ -1,4 +1,8 @@
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::{Extension, State},
+    http::HeaderMap,
+};
 use chrono::{Datelike, TimeZone, Utc};
 use serde::de::DeserializeOwned;
 use v2board_api_contract::time::Rfc3339Timestamp;
@@ -12,22 +16,21 @@ pub(crate) use v2board_api_contract::{
 };
 use v2board_application::{
     account::AccountError,
+    auth::AuthUser,
     service_usage::{ServiceServer, ServiceUsageError, TrafficRecord},
 };
 use v2board_compat::{ApiError, Code, Problem};
 use v2board_config::{app_now, app_timezone};
 
-use crate::{auth::require_user, dialect::problem_from, locale::request_locale, runtime::AppState};
+use crate::{dialect::problem_from, locale::request_locale, runtime::AppState};
 
 /// GET /user/stats — bare named counts (§5.3/§9.1).
 pub(crate) async fn user_stats(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<UserStatsBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let statistics = state
         .account_service()
         .statistics(user.id)
@@ -138,12 +141,10 @@ fn service_usage_error(error: ServiceUsageError) -> ApiError {
 /// routing is the Tier-1 outcome).
 pub(crate) async fn user_servers(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<ServerBody>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let servers = state
         .service_usage_service()
         .servers(user.id, Utc::now().timestamp())
@@ -175,12 +176,10 @@ fn traffic_log_body(row: TrafficRecord) -> TrafficLogBody {
 /// first (the legacy window is unchanged).
 pub(crate) async fn user_traffic_logs(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<TrafficLogBody>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let logs = state
         .service_usage_service()
         .traffic(user.id, first_day_of_month_timestamp())

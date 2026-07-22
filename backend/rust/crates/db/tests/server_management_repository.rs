@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::task::JoinSet;
 use v2board_application::server_management::{
     DeleteGroupOutcome, PreparedServerWrite, ServerColumnValue, ServerManagementRepository,
@@ -13,11 +13,12 @@ use v2board_domain_model::ServerKind;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn sorting_updates_multiple_protocol_tables_as_one_repository_command() {
-    let Some(pool) = integration_pool().await else {
-        return;
-    };
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn sorting_updates_multiple_protocol_tables_as_one_repository_command(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let group_id = insert_group(&pool, &marker).await;
     let shadowsocks_id = insert_shadowsocks(&pool, group_id, &format!("ss-{marker}"), 40).await;
@@ -52,15 +53,11 @@ async fn sorting_updates_multiple_protocol_tables_as_one_repository_command() {
         .await
         .expect("load vmess sort");
     assert_eq!((shadowsocks_sort, vmess_sort), (2, 1));
-
-    cleanup_group(&pool, group_id).await;
 }
 
-#[tokio::test]
-async fn concurrent_group_delete_and_node_create_never_leave_an_orphan() {
-    let Some(pool) = integration_pool().await else {
-        return;
-    };
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn concurrent_group_delete_and_node_create_never_leave_an_orphan(pool: PgPool) {
     for attempt in 0..8 {
         let marker = format!("{}-{attempt}", uuid::Uuid::new_v4().simple());
         let group_id = insert_group(&pool, &marker).await;
@@ -121,15 +118,14 @@ async fn concurrent_group_delete_and_node_create_never_leave_an_orphan() {
             (false, 0, Err(ServerPersistenceOutcome::ServerGroupNotFound), Ok(_)) => {}
             state => panic!("group/node race violated reference integrity: {state:?}"),
         }
-        cleanup_group(&pool, group_id).await;
     }
 }
 
-#[tokio::test]
-async fn external_runtime_reads_credentials_nodes_routes_and_authorized_users_through_its_port() {
-    let Some(pool) = integration_pool().await else {
-        return;
-    };
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn external_runtime_reads_credentials_nodes_routes_and_authorized_users_through_its_port(
+    pool: PgPool,
+) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let group_id = insert_group(&pool, &marker).await;
     let node_id = insert_shadowsocks(&pool, group_id, &format!("runtime-{marker}"), 1).await;
@@ -209,18 +205,6 @@ async fn external_runtime_reads_credentials_nodes_routes_and_authorized_users_th
             .expect("load alive-list users")
             .contains(&user_id)
     );
-
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .expect("clean runtime user");
-    sqlx::query("DELETE FROM server_route WHERE id = $1")
-        .bind(route_id)
-        .execute(&pool)
-        .await
-        .expect("clean runtime route");
-    cleanup_group(&pool, group_id).await;
 }
 
 fn shadowsocks_write(group_id: i32, name: &str) -> PreparedServerWrite {
@@ -292,44 +276,4 @@ async fn insert_vmess(pool: &PgPool, group_id: i32, name: &str, sort: i32) -> i3
     .fetch_one(pool)
     .await
     .expect("insert vmess node")
-}
-
-async fn cleanup_group(pool: &PgPool, group_id: i32) {
-    sqlx::query(
-        "DELETE FROM server_credential c USING server_shadowsocks s \
-         WHERE c.node_type = 'shadowsocks' AND c.node_id = s.id \
-           AND s.group_id @> jsonb_build_array($1::integer)",
-    )
-    .bind(group_id)
-    .execute(pool)
-    .await
-    .expect("clean scoped server credentials");
-    for table in ["server_shadowsocks", "server_vmess"] {
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "DELETE FROM {table} WHERE group_id @> jsonb_build_array($1::integer)"
-        )))
-        .bind(group_id)
-        .execute(pool)
-        .await
-        .expect("clean server node fixture");
-    }
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(group_id)
-        .execute(pool)
-        .await
-        .expect("clean server group fixture");
-}
-
-async fn integration_pool() -> Option<PgPool> {
-    let database_url = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL").ok()?;
-    let pool = PgPoolOptions::new()
-        .max_connections(8)
-        .connect(&database_url)
-        .await
-        .expect("connect to disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL migrations");
-    Some(pool)
 }

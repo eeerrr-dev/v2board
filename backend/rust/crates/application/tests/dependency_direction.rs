@@ -703,9 +703,9 @@ fn operator_recovery_cli_uses_application_ports() {
         .split("pub(crate) async fn reset_admin_totp")
         .nth(1)
         .expect("operator TOTP recovery function")
-        .split("pub(crate) struct TelemetryGuard")
+        .split("pub(crate) struct HeaderCarrier")
         .next()
-        .expect("operator recovery section precedes telemetry");
+        .expect("operator recovery section precedes the OTel header carrier");
     for service_call in ["service.reset_mfa(", "service.reset_password("] {
         assert!(
             recovery.contains(service_call),

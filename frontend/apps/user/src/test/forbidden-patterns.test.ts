@@ -153,7 +153,7 @@ describe('forbidden module imports', () => {
         'components/ui/form-field',
         "retired cloneElement FormField — use Controller with '@v2board/ui/field'",
       ],
-      ['lib/legacy-toast', "retired legacy toast — use '@/lib/toast'"],
+      ['lib/legacy-toast', "retired legacy toast — use '@v2board/app-shell/toast'"],
       ['components/layout/auth-language-menu', 'retired auth language-menu module'],
       ['@radix-ui/react-toast', 'legacy self-owned toast store — Sonner owns toasts'],
     ]);

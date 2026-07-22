@@ -14,6 +14,27 @@ const APP_SPECIFIC_UI_TESTS = {
   user: ['carousel.test.tsx'],
 };
 
+// Bootstrap infrastructure shared verbatim by both app shells (finding #16):
+// chunk-recovery, error-reporting, sentry, and toast are pure re-exports or
+// take their only app-specific dependency (getSentryDsn) as an explicit
+// parameter, and AppShellBoundary takes it as a prop, so none of them need a
+// per-app fork.
+const APP_SHELL_MODULES = [
+  'app-shell-boundary.tsx',
+  'chunk-recovery.ts',
+  'error-reporting.ts',
+  'sentry.ts',
+  'toast.ts',
+].sort();
+
+const APP_SHELL_MODULE_TESTS = [
+  'app-shell-boundary.test.tsx',
+  'chunk-recovery.test.ts',
+  'error-reporting.test.ts',
+].sort();
+
+const APP_SHELL_FORBIDDEN_LOCAL_FILES = [...APP_SHELL_MODULES, ...APP_SHELL_MODULE_TESTS];
+
 const SHARED_UI = [
   'alert-dialog.tsx',
   'alert.tsx',
@@ -76,6 +97,7 @@ const APP_FORBIDDEN_LIB_TEST_SUBJECTS = ['dark-mode', 'toast'];
 
 export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
   const uiRoot = resolve(projectRoot, 'frontend/packages/ui/src');
+  const appShellRoot = resolve(projectRoot, 'frontend/packages/app-shell/src');
   const userRoot = resolve(projectRoot, 'frontend/apps/user');
   const adminRoot = resolve(projectRoot, 'frontend/apps/admin');
   const [
@@ -84,6 +106,8 @@ export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
     sharedUiTests,
     sharedHookTests,
     sharedLibTests,
+    appShellFiles,
+    appShellTests,
     userFiles,
     adminFiles,
     userUiTests,
@@ -94,12 +118,18 @@ export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
     adminLibTests,
     userGlobals,
     adminGlobals,
+    userLibEntries,
+    adminLibEntries,
+    userComponentEntries,
+    adminComponentEntries,
   ] = await Promise.all([
     productionUiFiles(resolve(uiRoot, 'components')),
     cssFiles(resolve(uiRoot, 'styles')),
     testFiles(resolve(uiRoot, 'components')),
     testFiles(resolve(uiRoot, 'hooks')),
     testFiles(resolve(uiRoot, 'lib')),
+    productionUiFiles(appShellRoot),
+    testFiles(appShellRoot),
     productionUiFiles(resolve(userRoot, 'src/components/ui')),
     productionUiFiles(resolve(adminRoot, 'src/components/ui')),
     testFiles(resolve(userRoot, 'src/components/ui')),
@@ -110,6 +140,10 @@ export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
     testFiles(resolve(adminRoot, 'src/lib')),
     readFile(resolve(userRoot, 'src/styles/globals.css'), 'utf8'),
     readFile(resolve(adminRoot, 'src/styles/globals.css'), 'utf8'),
+    directoryEntries(resolve(userRoot, 'src/lib')),
+    directoryEntries(resolve(adminRoot, 'src/lib')),
+    directoryEntries(resolve(userRoot, 'src/components')),
+    directoryEntries(resolve(adminRoot, 'src/components')),
   ]);
 
   const failures = [
@@ -118,6 +152,12 @@ export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
     ...assertRequiredSet('canonical @v2board/ui component tests', sharedUiTests, SHARED_UI_TESTS),
     ...assertRequiredSet('canonical @v2board/ui hook tests', sharedHookTests, SHARED_HOOK_TESTS),
     ...assertRequiredSet('canonical @v2board/ui library tests', sharedLibTests, SHARED_LIB_TESTS),
+    ...assertExactSet('canonical @v2board/app-shell modules', appShellFiles, APP_SHELL_MODULES),
+    ...assertExactSet(
+      'canonical @v2board/app-shell module tests',
+      appShellTests,
+      APP_SHELL_MODULE_TESTS,
+    ),
     ...assertExactSet('user app-specific UI primitives', userFiles, APP_SPECIFIC_UI.user),
     ...assertExactSet('admin app-specific UI primitives', adminFiles, APP_SPECIFIC_UI.admin),
     ...assertExactSet('user app-specific UI tests', userUiTests, APP_SPECIFIC_UI_TESTS.user),
@@ -136,9 +176,12 @@ export async function auditUiSync(projectRoot = getDefaultProjectRoot()) {
     ),
     ...assertSharedStyleImports('user', userGlobals),
     ...assertSharedStyleImports('admin', adminGlobals),
+    ...assertNoLocalAppShellFiles('user', userLibEntries, userComponentEntries),
+    ...assertNoLocalAppShellFiles('admin', adminLibEntries, adminComponentEntries),
   ];
 
   return {
+    appShellModuleCount: appShellFiles.length,
     appSpecificCount: APP_SPECIFIC_UI.user.length + APP_SPECIFIC_UI.admin.length,
     failures,
     sharedPrimitiveCount: sharedFiles.length,
@@ -154,6 +197,7 @@ export function formatUiSyncSuccess(result) {
     `UI ownership audit OK: ${result.sharedPrimitiveCount} canonical @v2board/ui primitives and ` +
     `${result.sharedStylesheetCount} canonical stylesheets are shared; ` +
     `${result.sharedTestCount} shared tests have single package ownership; ` +
+    `${result.appShellModuleCount} canonical @v2board/app-shell modules are shared; ` +
     `${result.appSpecificCount} ${appSpecificLabel} local.`
   );
 }
@@ -184,6 +228,19 @@ export function assertNoSharedTestSubjects(name, actual, sharedSubjects) {
   });
   return duplicates.length > 0
     ? [`${name} duplicates package-owned tests: ${duplicates.join(', ')}`]
+    : [];
+}
+
+// Guards finding #16: chunk-recovery, error-reporting, sentry, toast, and
+// AppShellBoundary now live only in @v2board/app-shell. Checking both
+// src/lib and src/components against the full module+test filename set
+// (rather than each directory against its own subset) catches a re-added
+// file even if it lands in the "wrong" directory.
+export function assertNoLocalAppShellFiles(app, libEntries, componentEntries) {
+  const present = new Set([...libEntries, ...componentEntries]);
+  const duplicates = APP_SHELL_FORBIDDEN_LOCAL_FILES.filter((file) => present.has(file));
+  return duplicates.length > 0
+    ? [`${app} app duplicates package-owned @v2board/app-shell files: ${duplicates.join(', ')}`]
     : [];
 }
 
@@ -225,6 +282,18 @@ export async function testFiles(root) {
 
 async function cssFiles(root) {
   return (await readdir(root)).filter((file) => file.endsWith('.css')).sort();
+}
+
+export async function directoryEntries(root) {
+  try {
+    return (await readdir(root)).sort();
+  } catch (error) {
+    // A clean checkout may legitimately omit an app directory entirely (e.g.
+    // no src/components at the app root); that means "nothing to duplicate",
+    // not an audit crash.
+    if (error && typeof error === 'object' && error.code === 'ENOENT') return [];
+    throw error;
+  }
 }
 
 function getDefaultProjectRoot() {

@@ -5,7 +5,7 @@ import { useAuthRecaptcha } from './auth-recaptcha';
 
 const toastError = vi.hoisted(() => vi.fn());
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: { error: toastError },
 }));
 

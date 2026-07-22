@@ -13,7 +13,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 use v2board_analytics::{AnalyticsPressureState, analytics_admission_snapshot};
 use v2board_application::{
@@ -820,33 +819,6 @@ pub(crate) async fn reset_admin_password(
     Ok(())
 }
 
-/// Process-lifetime telemetry state. Holding it keeps the Sentry client
-/// alive; dropping it at the end of `main` flushes queued Sentry events and
-/// shuts down the OTLP tracer provider so buffered spans export.
-pub(crate) struct TelemetryGuard {
-    _sentry: Option<sentry::ClientInitGuard>,
-    otel: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
-}
-
-impl Drop for TelemetryGuard {
-    fn drop(&mut self) {
-        if let Some(provider) = self.otel.take()
-            && let Err(error) = provider.shutdown()
-        {
-            eprintln!("OTLP tracer provider shutdown did not flush cleanly: {error}");
-        }
-    }
-}
-
-static OTEL_ENABLED: AtomicBool = AtomicBool::new(false);
-
-/// Whether OTLP span export was initialized for this process. Gates the
-/// per-request W3C trace-context extraction so the disabled default costs
-/// nothing.
-pub(crate) fn otel_enabled() -> bool {
-    OTEL_ENABLED.load(Ordering::Relaxed)
-}
-
 /// Adapts request headers to the OTel propagation API for `traceparent`/
 /// `tracestate` extraction.
 pub(crate) struct HeaderCarrier<'a>(pub(crate) &'a axum::http::HeaderMap);
@@ -858,148 +830,6 @@ impl opentelemetry::propagation::Extractor for HeaderCarrier<'_> {
 
     fn keys(&self) -> Vec<&str> {
         self.0.keys().map(|key| key.as_str()).collect()
-    }
-}
-
-/// Initializes tracing plus optional Sentry error reporting and optional OTLP
-/// span export. Must run before the tokio runtime starts: the OTLP batch
-/// exporter constructs a blocking HTTP client, which panics inside one. The
-/// caller holds the returned guard for the process lifetime. Both exports are
-/// entirely off unless their env variable is set (`V2BOARD_SENTRY_DSN`,
-/// `V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT`); invalid values warn and stay off
-/// rather than failing the service.
-pub(crate) fn init_tracing() -> TelemetryGuard {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("v2board_api=info,tower_http=info"));
-    let production =
-        v2board_config::RuntimeEnvironment::parse(std::env::var("V2BOARD_ENV").ok().as_deref())
-            .is_ok_and(v2board_config::RuntimeEnvironment::is_production);
-    let dsn = parse_sentry_dsn(std::env::var("V2BOARD_SENTRY_DSN").ok());
-    let sentry_guard = dsn.as_ref().ok().and_then(Option::as_ref).map(|dsn| {
-        sentry::init(sentry::ClientOptions {
-            dsn: Some(dsn.clone()),
-            release: sentry::release_name!(),
-            environment: Some(if production { "production" } else { "local" }.into()),
-            attach_stacktrace: true,
-            ..Default::default()
-        })
-    });
-    let otel = init_otel("v2board-api");
-    let otel_provider = otel.as_ref().ok().and_then(Option::as_ref);
-    // ERROR events become Sentry events and WARN/INFO become breadcrumbs
-    // (the sentry-tracing default); without a client the layer is absent.
-    let sentry_enabled = sentry_guard.is_some();
-    if production {
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .json()
-                    .flatten_event(true)
-                    .with_current_span(true)
-                    .with_span_list(false),
-            )
-            .with(sentry_enabled.then(sentry::integrations::tracing::layer))
-            .with(otel_provider.map(|provider| {
-                use opentelemetry::trace::TracerProvider as _;
-                tracing_opentelemetry::layer().with_tracer(provider.tracer("v2board-api"))
-            }))
-            .init();
-    } else {
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(tracing_subscriber::fmt::layer())
-            .with(sentry_enabled.then(sentry::integrations::tracing::layer))
-            .with(otel_provider.map(|provider| {
-                use opentelemetry::trace::TracerProvider as _;
-                tracing_opentelemetry::layer().with_tracer(provider.tracer("v2board-api"))
-            }))
-            .init();
-    }
-    if let Err(error) = &dsn {
-        tracing::warn!(%error, "V2BOARD_SENTRY_DSN is invalid; error reporting is disabled");
-    }
-    let otel = match otel {
-        Ok(provider) => provider,
-        Err(error) => {
-            tracing::warn!(
-                error = %error,
-                "V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT is invalid; span export is disabled"
-            );
-            None
-        }
-    };
-    if otel.is_some() {
-        OTEL_ENABLED.store(true, Ordering::Relaxed);
-    }
-    TelemetryGuard {
-        _sentry: sentry_guard,
-        otel,
-    }
-}
-
-/// `Ok(None)` when the endpoint variable is absent or blank (export off).
-/// When set, the W3C trace-context propagator becomes the process global so
-/// incoming `traceparent` headers join the exported trace.
-fn init_otel(
-    service_name: &'static str,
-) -> Result<Option<opentelemetry_sdk::trace::SdkTracerProvider>, String> {
-    let Some(endpoint) = std::env::var("V2BOARD_OTEL_EXPORTER_OTLP_ENDPOINT")
-        .ok()
-        .map(|raw| raw.trim().to_owned())
-        .filter(|raw| !raw.is_empty())
-    else {
-        return Ok(None);
-    };
-    let traces_endpoint = normalize_otlp_traces_endpoint(&endpoint)?;
-    let exporter = {
-        use opentelemetry_otlp::WithExportConfig;
-        opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
-            .with_protocol(opentelemetry_otlp::Protocol::HttpBinary)
-            .with_endpoint(traces_endpoint)
-            .build()
-            .map_err(|error| error.to_string())?
-    };
-    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
-        .with_resource(
-            opentelemetry_sdk::Resource::builder()
-                .with_service_name(service_name)
-                .build(),
-        )
-        .build();
-    opentelemetry::global::set_text_map_propagator(
-        opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-    );
-    Ok(Some(provider))
-}
-
-/// Standard OTLP ergonomics: the operator supplies the base endpoint
-/// (e.g. `http://127.0.0.1:4318`) and the traces signal path is appended,
-/// unless a full signal URL was already given.
-fn normalize_otlp_traces_endpoint(endpoint: &str) -> Result<String, String> {
-    let url = url::Url::parse(endpoint)
-        .map_err(|error| format!("endpoint is not a valid URL: {error}"))?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err("endpoint must be an http(s) URL".to_owned());
-    }
-    let trimmed = endpoint.trim_end_matches('/');
-    if trimmed.ends_with("/v1/traces") {
-        Ok(trimmed.to_owned())
-    } else {
-        Ok(format!("{trimmed}/v1/traces"))
-    }
-}
-
-/// `Ok(None)` when the variable is absent or blank (reporting off); `Err`
-/// preserves the parse failure so it can be logged once tracing is up.
-fn parse_sentry_dsn(
-    raw: Option<String>,
-) -> Result<Option<sentry::types::Dsn>, sentry::types::ParseDsnError> {
-    match raw.as_deref().map(str::trim).filter(|raw| !raw.is_empty()) {
-        Some(raw) => raw.parse().map(Some),
-        None => Ok(None),
     }
 }
 
@@ -1160,10 +990,7 @@ pub(crate) async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ActivationSource, activation_source, finish_applied_operator_activation,
-        normalize_otlp_traces_endpoint, parse_sentry_dsn,
-    };
+    use super::{ActivationSource, activation_source, finish_applied_operator_activation};
     use std::sync::atomic::{AtomicI64, Ordering};
     use v2board_configuration_adapters::operator_config::OperatorConfigError;
 
@@ -1183,39 +1010,6 @@ mod tests {
             Ok(ActivationSource::Authority),
             "a delayed revision-2 response must apply and acknowledge DB-active revision 3"
         );
-    }
-
-    #[test]
-    fn otlp_endpoints_normalize_to_the_traces_signal_url() {
-        assert_eq!(
-            normalize_otlp_traces_endpoint("http://127.0.0.1:4318"),
-            Ok("http://127.0.0.1:4318/v1/traces".to_owned())
-        );
-        assert_eq!(
-            normalize_otlp_traces_endpoint("https://otel.example.com/"),
-            Ok("https://otel.example.com/v1/traces".to_owned())
-        );
-        assert_eq!(
-            normalize_otlp_traces_endpoint("http://127.0.0.1:4318/v1/traces"),
-            Ok("http://127.0.0.1:4318/v1/traces".to_owned())
-        );
-        assert!(normalize_otlp_traces_endpoint("not a url").is_err());
-        assert!(normalize_otlp_traces_endpoint("grpc://127.0.0.1:4317").is_err());
-    }
-
-    #[test]
-    fn sentry_reporting_is_off_without_a_dsn_and_on_parse_failure() {
-        assert!(matches!(parse_sentry_dsn(None), Ok(None)));
-        assert!(matches!(parse_sentry_dsn(Some(String::new())), Ok(None)));
-        assert!(matches!(
-            parse_sentry_dsn(Some("   ".to_string())),
-            Ok(None)
-        ));
-        assert!(parse_sentry_dsn(Some("not a dsn".to_string())).is_err());
-        let parsed = parse_sentry_dsn(Some(
-            "https://f00d@o111111.ingest.sentry.io/2222".to_string(),
-        ));
-        assert!(matches!(parsed, Ok(Some(_))));
     }
 
     #[test]

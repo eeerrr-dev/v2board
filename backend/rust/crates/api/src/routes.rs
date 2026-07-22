@@ -1,14 +1,16 @@
+use std::any::Any;
 use std::time::Duration;
 
 use axum::{
     Router,
     extract::Request,
     handler::Handler,
-    http::{HeaderMap, HeaderName, HeaderValue, Method, header},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{MethodFilter, get, on, post},
 };
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -114,6 +116,19 @@ define_internal_operation_router! {
         "auth.email-codes" [Auth] => crate::auth::email_codes,
         "auth.session.get" [Auth] => crate::auth::session_get,
         "auth.session.delete" [Auth] => crate::auth::session_delete,
+    }
+}
+
+// The `[User]` route group (profile, commerce, tickets, invites,
+// subscription, gift-card redemption): every operation here requires an
+// authenticated session. Kept as its own registry-backed router (instead of
+// folded into fixed_internal_router) so build_app can wrap it in a single
+// structural route_layer(user_guard) rather than relying on each handler to
+// call require_user for itself.
+define_internal_operation_router! {
+    pub(crate) fn user_internal_router;
+    pub(crate) const USER_INTERNAL_OPERATION_IDS;
+    {
         "user.profile.get" [User] => crate::user::user_profile,
         "user.profile.update" [User] => crate::user::user_profile_update,
         "user.password.update" [User] => crate::user::user_password_update,
@@ -177,6 +192,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
     let cors_state = state.clone();
     let http_metrics_state = state.clone();
     let rate_limit_state = state.clone();
+    let user_guard_state = state.clone();
     let request_timeout = Duration::from_secs(config.api_request_timeout_seconds);
 
     Router::new()
@@ -191,6 +207,16 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         // explicit below because their legacy wire contract is intentionally
         // outside the modern internal OpenAPI document.
         .merge(fixed_internal_router())
+        // Structural enforcement for the `[User]` route group (finding: user
+        // routes were previously merged flat with no route_layer, unlike
+        // admin_router/staff_router): every operation bound here passes
+        // through `user_guard` before reaching its handler.
+        .merge(
+            user_internal_router().route_layer(middleware::from_fn_with_state(
+                user_guard_state,
+                crate::auth::user_guard,
+            )),
+        )
         .route(
             "/api/v1/guest/payment/notify/{method}/{uuid}",
             get(crate::client::payment_notify).post(crate::client::payment_notify),
@@ -237,6 +263,12 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
         ))
         .fallback(crate::fallback::dynamic_fallback)
         .with_state(state)
+        // Innermost so a handler panic becomes an ordinary 500 response before
+        // any outer layer runs: TraceLayer, http_metrics_middleware (whose
+        // in-flight gauge decrement must run even when the handler panics),
+        // and route_metrics_middleware all still observe a normal
+        // response/next.run() return instead of an unwind past their code.
+        .layer(CatchPanicLayer::custom(log_and_render_panic))
         .layer(middleware::from_fn(cache_static_assets))
         .layer(middleware::from_fn(security_response_headers))
         .layer(middleware::from_fn(language_middleware))
@@ -271,7 +303,7 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
                 // W3C trace context: adopt an incoming `traceparent` as the
                 // remote parent only when OTLP export is on; the disabled
                 // default stays a plain local span with zero extra work.
-                if crate::runtime::otel_enabled() {
+                if v2board_telemetry::otel_enabled() {
                     use tracing_opentelemetry::OpenTelemetrySpanExt;
                     let parent = opentelemetry::global::get_text_map_propagator(|propagator| {
                         propagator.extract(&crate::runtime::HeaderCarrier(request.headers()))
@@ -314,6 +346,26 @@ pub(super) fn build_app(state: AppState, config: &AppConfig) -> Router {
             http_metrics_state,
             crate::metrics::http_metrics_middleware,
         ))
+}
+
+/// Structured-logs a handler panic (matching this crate's `tracing::error!`
+/// field convention, instead of tower-http's default bare message) and turns
+/// it into a plain 500, so the outer metrics/tracing/logging layers observe a
+/// normal response rather than an unwind.
+fn log_and_render_panic(panic: Box<dyn Any + Send + 'static>) -> Response {
+    let message = panic_message(&panic);
+    tracing::error!(panic = %message, "request handler panicked");
+    (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
+}
+
+fn panic_message(panic: &(dyn Any + Send + 'static)) -> String {
+    if let Some(message) = panic.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = panic.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 
 async fn security_response_headers(request: Request, next: Next) -> Response {
@@ -440,15 +492,18 @@ mod tests {
 
     use axum::{
         body::{Body, to_bytes},
-        extract::{ConnectInfo, Request},
+        extract::{ConnectInfo, Request, State},
         http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
+        middleware,
+        routing::get,
     };
     use tower::ServiceExt as _;
     use v2board_config::AppConfig;
 
     use super::{
-        X_REQUEST_ID, apply_security_response_headers, build_app, cors_origin_allowed,
-        is_content_hashed_asset, valid_request_id, valid_request_id_header,
+        CatchPanicLayer, X_REQUEST_ID, apply_security_response_headers, build_app,
+        cors_origin_allowed, is_content_hashed_asset, log_and_render_panic, valid_request_id,
+        valid_request_id_header,
     };
     use crate::runtime::AppState;
 
@@ -459,8 +514,10 @@ mod tests {
         // Construction itself is part of the assertion: Axum rejects
         // conflicting registrations for the same method/path.
         let _router = super::fixed_internal_router();
+        let _user_router = super::user_internal_router();
         let bound = super::FIXED_INTERNAL_OPERATION_IDS
             .iter()
+            .chain(super::USER_INTERNAL_OPERATION_IDS)
             .chain(crate::admin::ADMIN_INTERNAL_OPERATION_IDS)
             .chain(crate::admin::STAFF_INTERNAL_OPERATION_IDS)
             .copied()
@@ -661,6 +718,49 @@ mod tests {
         assert!(!is_content_hashed_asset("index-abc.js"));
         assert!(!is_content_hashed_asset("index-abcdefgh."));
         assert!(!is_content_hashed_asset("-abcdefgh.js"));
+    }
+
+    /// Mirrors the production layer ordering that matters for finding #4:
+    /// `CatchPanicLayer` sits inside (added before) `http_metrics_middleware`,
+    /// so a handler panic must still surface as a plain 500 to the outer
+    /// metrics layer instead of unwinding past its in-flight gauge decrement.
+    async fn panicking_handler() -> &'static str {
+        panic!("boom")
+    }
+
+    #[tokio::test]
+    async fn a_handler_panic_is_caught_before_the_outer_metrics_layer_and_leaves_no_gauge_leak() {
+        let state = AppState::service_free_test(AppConfig::from_api_env());
+        let app: axum::Router = axum::Router::new()
+            .route("/panics", get(panicking_handler))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::metrics::route_metrics_middleware,
+            ))
+            .with_state(state.clone())
+            .layer(CatchPanicLayer::custom(log_and_render_panic))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                crate::metrics::http_metrics_middleware,
+            ));
+
+        let request = Request::builder()
+            .uri("/panics")
+            .body(Body::empty())
+            .expect("request");
+        let response = app.oneshot(request).await.expect("infallible");
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let metrics_response = crate::metrics::metrics(State(state)).await;
+        let body = to_bytes(metrics_response.into_body(), 64 * 1024)
+            .await
+            .expect("metrics body");
+        let text = String::from_utf8(body.to_vec()).expect("utf-8 metrics body");
+        assert!(
+            text.contains("v2board_http_requests_in_flight 0\n"),
+            "in-flight gauge leaked after a handler panic: {text}"
+        );
+        assert!(text.contains("v2board_http_requests_total{class=\"5xx\"} 1\n"));
     }
 
     #[test]

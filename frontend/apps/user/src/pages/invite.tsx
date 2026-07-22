@@ -26,7 +26,7 @@ import {
 } from '@/lib/queries';
 import { formatBackendDateMinuteSlash, formatCentsPlain } from '@v2board/config/format';
 import { copyText } from '@v2board/config/clipboard';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 // The invite API receives the raw requested page; only the visible pagination
 // control clamps a now-empty final page after the total changes.

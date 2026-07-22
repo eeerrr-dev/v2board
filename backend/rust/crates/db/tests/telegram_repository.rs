@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::telegram::{
     BindTelegramOutcome, TelegramRepository, UnbindTelegramOutcome,
 };
@@ -6,16 +6,16 @@ use v2board_db::telegram::PostgresTelegramRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn telegram_repository_persists_bindings_and_scopes_operator_notifications() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn telegram_repository_persists_bindings_and_scopes_operator_notifications(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let telegram_base = telegram_fixture_base(&marker);
-    let admin_id = insert_user(&pool, &marker, "admin", Some(telegram_base), true, false).await;
-    let staff_id = insert_user(
+    let _admin_id = insert_user(&pool, &marker, "admin", Some(telegram_base), true, false).await;
+    let _staff_id = insert_user(
         &pool,
         &marker,
         "staff",
@@ -24,7 +24,7 @@ async fn telegram_repository_persists_bindings_and_scopes_operator_notifications
         true,
     )
     .await;
-    let normal_id = insert_user(
+    let _normal_id = insert_user(
         &pool,
         &marker,
         "normal",
@@ -111,12 +111,6 @@ async fn telegram_repository_persists_bindings_and_scopes_operator_notifications
             .expect("classify an absent Telegram binding"),
         UnbindTelegramOutcome::UserNotFound
     );
-
-    sqlx::query("DELETE FROM users WHERE id = ANY($1)")
-        .bind(vec![admin_id, staff_id, normal_id, bind_id])
-        .execute(&pool)
-        .await
-        .expect("remove Telegram repository fixtures");
 }
 
 async fn insert_user(
@@ -150,17 +144,4 @@ async fn insert_user(
 fn telegram_fixture_base(marker: &str) -> i64 {
     let prefix = &marker[..12];
     i64::from_str_radix(prefix, 16).expect("UUID prefix is hexadecimal")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .connect(database_url)
-        .await
-        .expect("connect to disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL baseline for Telegram repository test");
-    pool
 }

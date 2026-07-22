@@ -22,7 +22,7 @@ import {
 import { Button } from '@v2board/ui/button';
 import { DashboardSubscribeMenu } from './subscribe-menu';
 import { useNewPeriodMutation, useSaveOrderMutation, useSubscribe } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 export type DashboardConfirmAction = 'reset-package' | 'new-period' | null;
 

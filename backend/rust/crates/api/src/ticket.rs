@@ -2,7 +2,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
@@ -14,6 +14,7 @@ use v2board_api_contract::{
         UserTicketReplyRequest, UserTicketView, WithdrawalTicketCreateRequest,
     },
 };
+use v2board_application::auth::AuthUser;
 use v2board_application::ticket::{
     CreateTicketInput, CreateWithdrawalTicketInput, Ticket, TicketDetail, TicketError,
     TicketMessage,
@@ -21,7 +22,6 @@ use v2board_application::ticket::{
 use v2board_compat::{ApiError, Code, Problem};
 
 use crate::{
-    auth::require_user,
     dialect::{DialectJson, problem_from},
     locale::request_locale,
     runtime::AppState,
@@ -108,12 +108,10 @@ fn ticket_detail_view(detail: TicketDetail) -> UserTicketDetailView {
 
 pub(crate) async fn tickets_list(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<UserTicketView>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let tickets = state
         .ticket_service()
         .user_tickets(user.id)
@@ -124,13 +122,11 @@ pub(crate) async fn tickets_list(
 
 pub(crate) async fn ticket_detail(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<UserTicketDetailView>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .ticket_service()
         .user_ticket(user.id, id)
@@ -142,13 +138,11 @@ pub(crate) async fn ticket_detail(
 
 pub(crate) async fn ticket_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<UserTicketCreateRequest>,
 ) -> Result<(StatusCode, Json<CreatedInt64Id>), Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let id = state
         .ticket_service()
         .create_ticket(
@@ -167,14 +161,12 @@ pub(crate) async fn ticket_create(
 
 pub(crate) async fn ticket_reply_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(id): Path<i64>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<UserTicketReplyRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .ticket_service()
         .reply_as_user(user.id, id, payload.message, Utc::now().timestamp())
@@ -185,13 +177,11 @@ pub(crate) async fn ticket_reply_create(
 
 pub(crate) async fn ticket_close(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .ticket_service()
         .close_as_user(user.id, id, Utc::now().timestamp())
@@ -202,13 +192,11 @@ pub(crate) async fn ticket_close(
 
 pub(crate) async fn withdrawal_ticket_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<WithdrawalTicketCreateRequest>,
 ) -> Result<(StatusCode, Json<CreatedInt64Id>), Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let id = state
         .ticket_service()
         .create_withdrawal_ticket(

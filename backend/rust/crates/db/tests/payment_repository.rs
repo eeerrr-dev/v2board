@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::payment::{
     ArchivePaymentOutcome, ChangePaymentOutcome, NewPaymentMethod, PaymentChanges,
     PaymentRepository, SortPaymentsOutcome,
@@ -7,16 +7,12 @@ use v2board_db::admin_payment::PostgresPaymentRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn payment_repository_preserves_metadata_nulls_archive_and_exact_sort() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    sqlx::query("TRUNCATE TABLE payment_method RESTART IDENTITY CASCADE")
-        .execute(&pool)
-        .await
-        .expect("reset the disposable payment repository fixture");
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixture no longer needs a
+// shared-table TRUNCATE before it runs.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn payment_repository_preserves_metadata_nulls_archive_and_exact_sort(pool: PgPool) {
     let repository = PostgresPaymentRepository::new(pool.clone());
 
     let first = repository
@@ -123,17 +119,4 @@ fn payment(name: &str, uuid: &str, now: i64) -> NewPaymentMethod {
         created_at: now,
         updated_at: now,
     }
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL migrations before the payment repository test");
-    pool
 }

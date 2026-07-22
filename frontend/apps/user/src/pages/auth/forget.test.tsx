@@ -94,7 +94,7 @@ vi.mock('@/lib/errors', () => ({
   i18nGet: (message: string) => message,
 }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,

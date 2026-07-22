@@ -14,7 +14,7 @@ import {
 import { Field, FieldLabel } from '@v2board/ui/field';
 import { Input } from '@v2board/ui/input';
 import { apiClient } from '@/lib/api';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import {
   isStepUpPromptRequested,
   resolveStepUpPrompt,

@@ -114,7 +114,7 @@ vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog,
 }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: toastSpies,
 }));
 

@@ -9,7 +9,7 @@ use crate::RepositoryError;
 
 pub type RepositoryResult<T> = Result<T, RepositoryError>;
 
-const MAX_EMAIL_CHARS: usize = 64;
+const MAX_EMAIL_CHARS: usize = 254;
 const MAX_PASSWORD_CHARS: usize = 128;
 const MAX_INVITE_CODE_BYTES: usize = 255;
 const MAX_EMAIL_CODE_BYTES: usize = 64;
@@ -576,7 +576,7 @@ fn validate_password(password: &str) -> Result<(), AuthError> {
 
 fn validate_forget(email: &str, password: &str, email_code: &str) -> Result<(), AuthError> {
     validate_email(email)?;
-    if email.trim().chars().count() > 64 {
+    if email.trim().chars().count() > MAX_EMAIL_CHARS {
         return Err(AuthError::validation("email", "Email format is incorrect"));
     }
     validate_password(password)?;
@@ -1635,7 +1635,7 @@ where
             .find_account_by_id(user_id)
             .await?
             .ok_or(AuthError::Unauthorized)?;
-        if account.banned || (account.is_admin == 0 && account.is_staff == 0) {
+        if account.banned {
             return Err(AuthError::Unauthorized);
         }
         if !self

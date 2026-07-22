@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFormState, type UseFormRegister } from 'react-hook-form';
 import { useGuestConfig, useRegisterMutation } from '@/lib/guest';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { i18nGet } from '@/lib/errors';
 import { useAuthRecaptcha } from './auth-recaptcha';
 import {

@@ -10,10 +10,9 @@ use serde_json::Number;
 use v2board_api_contract::{
     AdminPlanItem, CreatedId, PlanCreate, PlanPatch, SortIdsRequest,
     admin_business::{
-        AdminCommissionLogItem, AdminFilterClause, AdminFilterNumber, AdminFilterOperator,
-        AdminFilterScalar, AdminFilterValue, AdminOrderCreateRequest, AdminOrderDetail,
-        AdminOrderFields, AdminOrderListItem, AdminOrderPatchRequest, AdminPaymentCreateRequest,
-        AdminPaymentItem, AdminPaymentPatchRequest, AdminPaymentReconciliationItem,
+        AdminCommissionLogItem, AdminOrderCreateRequest, AdminOrderDetail, AdminOrderFields,
+        AdminOrderListItem, AdminOrderPatchRequest, AdminPaymentCreateRequest, AdminPaymentItem,
+        AdminPaymentPatchRequest, AdminPaymentReconciliationItem,
         AdminPaymentReconciliationListItem, PaymentProviderCode, PaymentProviderForm,
         PaymentProviderFormField, ReconciliationResolveRequest,
     },
@@ -26,8 +25,7 @@ use v2board_application::{
         AdminOrderDetail as ApplicationAdminOrderDetail, AdminOrderError, AdminOrderInputViolation,
         AdminOrderListItem as ApplicationAdminOrderList, AdminOrderQuery,
         AdminOrderReconciliation as ApplicationAdminOrderReconciliation, AssignOrderInput,
-        Comparison, OrderField, OrderFieldKind, OrderPatch, OrderPredicate, OrderSort,
-        SortDirection, escape_like_pattern,
+        OrderField, OrderPatch, OrderSort, SortDirection,
     },
     auth::AuthUser,
     payment::{
@@ -51,6 +49,8 @@ use crate::{
     locale::request_locale,
     runtime::AppState,
 };
+
+use super::filter_dsl::parse_filter_query;
 
 /// §8 default for `GET orders` / `GET payment-reconciliations` (the legacy
 /// admin list default).
@@ -583,173 +583,6 @@ fn admin_order_problem(error: AdminOrderError, locale: &str) -> Problem {
     problem_from(error, locale)
 }
 
-fn order_filter_error(detail: impl Into<String>) -> ApiError {
-    Problem::validation_field("filter", detail).into()
-}
-
-fn filter_integer(number: AdminFilterNumber) -> Option<i64> {
-    match number {
-        AdminFilterNumber::Integer(value) => Some(value),
-        AdminFilterNumber::Unsigned(value) => i64::try_from(value).ok(),
-        AdminFilterNumber::Decimal(_) => None,
-    }
-}
-
-fn filter_timestamp(value: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|value| value.timestamp())
-}
-
-fn scalar_integer(kind: OrderFieldKind, value: AdminFilterScalar) -> Option<i64> {
-    match (kind, value) {
-        (OrderFieldKind::Integer, AdminFilterScalar::Number(value)) => filter_integer(value),
-        (OrderFieldKind::Timestamp, AdminFilterScalar::String(value)) => filter_timestamp(&value),
-        _ => None,
-    }
-}
-
-fn value_integer(kind: OrderFieldKind, value: AdminFilterValue) -> Option<i64> {
-    match (kind, value) {
-        (OrderFieldKind::Integer, AdminFilterValue::Number(value)) => filter_integer(value),
-        (OrderFieldKind::Timestamp, AdminFilterValue::String(value)) => filter_timestamp(&value),
-        _ => None,
-    }
-}
-
-fn comparison(operator: AdminFilterOperator) -> Option<Comparison> {
-    Some(match operator {
-        AdminFilterOperator::Eq => Comparison::Equal,
-        AdminFilterOperator::Neq => Comparison::NotEqual,
-        AdminFilterOperator::Gt => Comparison::Greater,
-        AdminFilterOperator::Gte => Comparison::GreaterOrEqual,
-        AdminFilterOperator::Lt => Comparison::Less,
-        AdminFilterOperator::Lte => Comparison::LessOrEqual,
-        AdminFilterOperator::Like | AdminFilterOperator::In => return None,
-    })
-}
-
-fn order_predicate(clause: AdminFilterClause) -> Result<OrderPredicate, ApiError> {
-    let field = OrderField::from_name(&clause.field)
-        .ok_or_else(|| order_filter_error(format!("field {} is not filterable", clause.field)))?;
-    let kind = field.kind();
-    match (clause.op, clause.value) {
-        (AdminFilterOperator::Eq, AdminFilterValue::Null) => Ok(OrderPredicate::IsNull {
-            field,
-            negated: false,
-        }),
-        (AdminFilterOperator::Neq, AdminFilterValue::Null) => Ok(OrderPredicate::IsNull {
-            field,
-            negated: true,
-        }),
-        (operator @ (AdminFilterOperator::Eq | AdminFilterOperator::Neq), value) => {
-            let comparison = comparison(operator).expect("equality has a comparison");
-            match (kind, value) {
-                (OrderFieldKind::Text, AdminFilterValue::String(value)) => {
-                    Ok(OrderPredicate::CompareText {
-                        field,
-                        comparison,
-                        value,
-                    })
-                }
-                (kind @ (OrderFieldKind::Integer | OrderFieldKind::Timestamp), value) => {
-                    value_integer(kind, value)
-                        .map(|value| OrderPredicate::CompareInteger {
-                            field,
-                            comparison,
-                            value,
-                        })
-                        .ok_or_else(|| {
-                            order_filter_error(format!(
-                                "{} requires a value matching its column type",
-                                clause.field
-                            ))
-                        })
-                }
-                _ => Err(order_filter_error(format!(
-                    "{} requires a value matching its column type",
-                    clause.field
-                ))),
-            }
-        }
-        (
-            operator @ (AdminFilterOperator::Gt
-            | AdminFilterOperator::Gte
-            | AdminFilterOperator::Lt
-            | AdminFilterOperator::Lte),
-            value,
-        ) => {
-            if kind == OrderFieldKind::Text {
-                return Err(order_filter_error(format!(
-                    "range comparison is not supported on {}",
-                    clause.field
-                )));
-            }
-            let value = value_integer(kind, value).ok_or_else(|| {
-                order_filter_error(format!(
-                    "range comparison on {} requires an integer or RFC 3339 value",
-                    clause.field
-                ))
-            })?;
-            Ok(OrderPredicate::CompareInteger {
-                field,
-                comparison: comparison(operator).expect("range operator has a comparison"),
-                value,
-            })
-        }
-        (AdminFilterOperator::Like, AdminFilterValue::String(value)) => {
-            let escaped_pattern = format!("%{}%", escape_like_pattern(&value));
-            match kind {
-                OrderFieldKind::Integer => Ok(OrderPredicate::ContainsInteger {
-                    field,
-                    escaped_pattern,
-                }),
-                OrderFieldKind::Text => Ok(OrderPredicate::ContainsText {
-                    field,
-                    escaped_pattern,
-                }),
-                OrderFieldKind::Timestamp => Err(order_filter_error(format!(
-                    "like is not supported on {}",
-                    clause.field
-                ))),
-            }
-        }
-        (AdminFilterOperator::Like, _) => Err(order_filter_error(format!(
-            "like on {} requires a string value",
-            clause.field
-        ))),
-        (AdminFilterOperator::In, AdminFilterValue::Array(values)) => match kind {
-            OrderFieldKind::Text => values
-                .into_iter()
-                .map(|value| match value {
-                    AdminFilterScalar::String(value) => Ok(value),
-                    _ => Err(order_filter_error(format!(
-                        "in on {} requires string values",
-                        clause.field
-                    ))),
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| OrderPredicate::InText { field, values }),
-            OrderFieldKind::Integer | OrderFieldKind::Timestamp => values
-                .into_iter()
-                .map(|value| {
-                    scalar_integer(kind, value).ok_or_else(|| {
-                        order_filter_error(format!(
-                            "in on {} requires values matching its column type",
-                            clause.field
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| OrderPredicate::InInteger { field, values }),
-        },
-        (AdminFilterOperator::In, _) => Err(order_filter_error(format!(
-            "in on {} requires an array value",
-            clause.field
-        ))),
-    }
-}
-
 fn admin_order_query(
     filter: Option<&str>,
     sort_by: Option<&str>,
@@ -758,18 +591,7 @@ fn admin_order_query(
     limit: i64,
     offset: i64,
 ) -> Result<AdminOrderQuery, ApiError> {
-    let predicates = filter
-        .map(|raw| {
-            serde_json::from_str::<Vec<AdminFilterClause>>(raw)
-                .map_err(|error| {
-                    order_filter_error(format!("filter must be a JSON clause array: {error}"))
-                })?
-                .into_iter()
-                .map(order_predicate)
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let predicates = parse_filter_query::<OrderField>(filter)?;
     let field_name = sort_by.unwrap_or("created_at");
     let field = OrderField::from_name(field_name).ok_or_else(|| {
         ApiError::from(Problem::validation_field(
@@ -1366,6 +1188,8 @@ pub(super) async fn reconciliation_resolve(
 
 #[cfg(test)]
 mod order_query_tests {
+    use v2board_application::filter_dsl::{FilterClause, FilterOperator, FilterValue};
+
     use super::*;
 
     #[test]
@@ -1395,28 +1219,33 @@ mod order_query_tests {
                 direction: SortDirection::Ascending,
             }
         );
-        assert!(matches!(
-            &query.predicates[0],
-            OrderPredicate::ContainsText {
+        // The `like` value stays the raw, unescaped wire string here; the
+        // shared SQL translator (`db::filter_dsl::push_clause`) escapes and
+        // `%...%`-wraps it at render time (docs/api-dialect.md §7.1).
+        assert_eq!(
+            query.predicates[0],
+            FilterClause {
                 field: OrderField::TradeNo,
-                escaped_pattern,
-            } if escaped_pattern == r"%A\%\_B%"
-        ));
-        assert!(matches!(
-            &query.predicates[1],
-            OrderPredicate::InInteger {
-                field: OrderField::Status,
-                values,
-            } if values == &[0, 1]
-        ));
-        assert!(matches!(
-            query.predicates[2],
-            OrderPredicate::CompareInteger {
-                field: OrderField::CreatedAt,
-                comparison: Comparison::GreaterOrEqual,
-                value: 1_735_787_045,
+                operator: FilterOperator::Like,
+                value: FilterValue::Text("A%_B".to_string()),
             }
-        ));
+        );
+        assert_eq!(
+            query.predicates[1],
+            FilterClause {
+                field: OrderField::Status,
+                operator: FilterOperator::In,
+                value: FilterValue::Integers(vec![0, 1]),
+            }
+        );
+        assert_eq!(
+            query.predicates[2],
+            FilterClause {
+                field: OrderField::CreatedAt,
+                operator: FilterOperator::Gte,
+                value: FilterValue::Integer(1_735_787_045),
+            }
+        );
     }
 
     #[test]

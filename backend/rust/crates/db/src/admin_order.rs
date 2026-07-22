@@ -4,7 +4,7 @@ use v2board_application::{
     admin_order::{
         AdminCommissionLog, AdminOrder, AdminOrderDetail, AdminOrderListItem, AdminOrderPage,
         AdminOrderQuery, AdminOrderReconciliation, AdminOrderRepository, AssignOrderCommand,
-        AssignOrderOutcome, CancelOrderOutcome, Comparison, OrderField, OrderPatch, OrderPredicate,
+        AssignOrderOutcome, CancelOrderOutcome, OrderField, OrderFilterClause, OrderPatch,
         PatchOrderOutcome, PendingOrderBinding, PendingOrderOutcome, RepositoryResult,
         SortDirection,
     },
@@ -12,6 +12,8 @@ use v2board_application::{
 use v2board_domain_model::{
     CommissionEligibility, commission_is_eligible, order_commission_amount,
 };
+
+use crate::filter_dsl::push_filters;
 
 const UNFINISHED_ORDER_UNIQUE_KEY: &str = "uniq_unfinished_order_per_user";
 
@@ -617,62 +619,12 @@ fn push_commission_scope(builder: &mut QueryBuilder<Postgres>, enabled: bool) {
     }
 }
 
-fn push_predicates(builder: &mut QueryBuilder<Postgres>, predicates: &[OrderPredicate]) {
-    for predicate in predicates {
-        builder.push(" AND ");
-        match predicate {
-            OrderPredicate::IsNull { field, negated } => {
-                builder.push(field_expression(*field));
-                builder.push(if *negated { " IS NOT NULL" } else { " IS NULL" });
-            }
-            OrderPredicate::CompareInteger {
-                field,
-                comparison,
-                value,
-            } => {
-                builder.push(field_expression(*field));
-                builder.push(comparison_expression(*comparison));
-                builder.push_bind(*value);
-            }
-            OrderPredicate::CompareText {
-                field,
-                comparison,
-                value,
-            } => {
-                builder.push(field_expression(*field));
-                builder.push(comparison_expression(*comparison));
-                builder.push_bind(value.clone());
-            }
-            OrderPredicate::ContainsInteger {
-                field,
-                escaped_pattern,
-            } => {
-                builder.push(field_expression(*field));
-                builder.push("::text ILIKE ");
-                builder.push_bind(escaped_pattern.clone());
-            }
-            OrderPredicate::ContainsText {
-                field,
-                escaped_pattern,
-            } => {
-                builder.push(field_expression(*field));
-                builder.push(" ILIKE ");
-                builder.push_bind(escaped_pattern.clone());
-            }
-            OrderPredicate::InInteger { field, values } => {
-                builder.push(field_expression(*field));
-                builder.push(" = ANY(");
-                builder.push_bind(values.clone());
-                builder.push(")");
-            }
-            OrderPredicate::InText { field, values } => {
-                builder.push(field_expression(*field));
-                builder.push(" = ANY(");
-                builder.push_bind(values.clone());
-                builder.push(")");
-            }
-        }
-    }
+/// Appends a validated closed order-filter set to a PostgreSQL query
+/// through the shared table-driven engine (`crate::filter_dsl`): column
+/// expressions are code-owned (`field_expression`) and every request value
+/// is bound.
+fn push_predicates(builder: &mut QueryBuilder<Postgres>, predicates: &[OrderFilterClause]) {
+    push_filters(builder, predicates, field_expression);
 }
 
 const fn field_expression(field: OrderField) -> &'static str {
@@ -700,16 +652,5 @@ const fn field_expression(field: OrderField) -> &'static str {
         OrderField::PaidAt => "o.paid_at",
         OrderField::CreatedAt => "o.created_at",
         OrderField::UpdatedAt => "o.updated_at",
-    }
-}
-
-const fn comparison_expression(comparison: Comparison) -> &'static str {
-    match comparison {
-        Comparison::Equal => " = ",
-        Comparison::NotEqual => " <> ",
-        Comparison::Greater => " > ",
-        Comparison::GreaterOrEqual => " >= ",
-        Comparison::Less => " < ",
-        Comparison::LessOrEqual => " <= ",
     }
 }

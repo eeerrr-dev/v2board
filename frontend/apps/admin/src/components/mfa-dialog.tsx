@@ -22,7 +22,7 @@ import {
   useDisableTotpMutation,
   useSetupTotpMutation,
 } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 interface MfaDialogProps {
   open: boolean;

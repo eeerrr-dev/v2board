@@ -1,9 +1,6 @@
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
-use sqlx::{
-    Connection, PgConnection, PgPool,
-    postgres::{PgConnectOptions, PgPoolOptions},
-};
+use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
 use tokio::sync::oneshot;
 use v2board_application::plan::PlanReference;
 use v2board_db::plan::{
@@ -23,13 +20,13 @@ const DELETE_GROUP_ID: i32 = 2_000_000_021;
 const DELETE_PLAN_ID: i32 = 2_000_000_021;
 const DELETE_USER_ID: i64 = 2_000_000_021;
 
-#[tokio::test]
-async fn user_binding_waits_for_plan_writer_and_reads_the_committed_limits() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    reset_binding_fixture(&pool).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixed fixture ids below can
+// no longer collide across tests or files and no longer need hand-written
+// DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn user_binding_waits_for_plan_writer_and_reads_the_committed_limits(pool: PgPool) {
     insert_group(&pool, BINDING_GROUP_ID, "binding-old-group").await;
     insert_group(&pool, BINDING_NEW_GROUP_ID, "binding-new-group").await;
     insert_plan(&pool, BINDING_PLAN_ID, BINDING_GROUP_ID).await;
@@ -52,11 +49,9 @@ async fn user_binding_waits_for_plan_writer_and_reads_the_committed_limits() {
     .expect("write the uncommitted plan binding values");
 
     let (started_tx, started_rx) = oneshot::channel();
-    let reader_database_url = database_url.clone();
+    let reader_options = (*pool.connect_options()).clone();
     let reader =
-        tokio::spawn(
-            async move { read_binding_after_user_lock(reader_database_url, started_tx).await },
-        );
+        tokio::spawn(async move { read_binding_after_user_lock(reader_options, started_tx).await });
     let reader_pid = started_rx.await.expect("reader reports its backend pid");
     wait_until_lock_wait(&pool, reader_pid, BINDING_READER_APPLICATION_NAME).await;
     assert!(
@@ -93,17 +88,11 @@ async fn user_binding_waits_for_plan_writer_and_reads_the_committed_limits() {
             Some(11),
         )
     );
-
-    reset_binding_fixture(&pool).await;
 }
 
-#[tokio::test]
-async fn post_parent_recheck_observes_a_reference_created_after_delete_preflight() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    reset_delete_fixture(&pool).await;
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn post_parent_recheck_observes_a_reference_created_after_delete_preflight(pool: PgPool) {
     insert_group(&pool, DELETE_GROUP_ID, "delete-race-group").await;
     insert_plan(&pool, DELETE_PLAN_ID, DELETE_GROUP_ID).await;
 
@@ -137,29 +126,13 @@ async fn post_parent_recheck_observes_a_reference_created_after_delete_preflight
         Some(PlanReference::User)
     );
     deleting.rollback().await.expect("roll back test deletion");
-
-    reset_delete_fixture(&pool).await;
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline before the concurrency regression");
-    pool
 }
 
 async fn read_binding_after_user_lock(
-    database_url: String,
+    connect_options: PgConnectOptions,
     started: oneshot::Sender<i32>,
 ) -> Result<Option<v2board_db::plan::PlanBindingRow>, sqlx::Error> {
-    let options = PgConnectOptions::from_str(&database_url)?
-        .application_name(BINDING_READER_APPLICATION_NAME);
+    let options = connect_options.application_name(BINDING_READER_APPLICATION_NAME);
     let mut connection = PgConnection::connect_with(&options).await?;
     let mut transaction = connection.begin().await?;
     sqlx::query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
@@ -261,42 +234,4 @@ async fn insert_user(pool: &PgPool, id: i64, label: &str, plan_id: Option<i32>) 
     .execute(pool)
     .await
     .expect("insert concurrency-test user");
-}
-
-async fn reset_binding_fixture(pool: &PgPool) {
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(BINDING_USER_ID)
-        .execute(pool)
-        .await
-        .expect("remove binding-test user");
-    sqlx::query("DELETE FROM plan WHERE id = $1")
-        .bind(BINDING_PLAN_ID)
-        .execute(pool)
-        .await
-        .expect("remove binding-test plan");
-    for group_id in [BINDING_GROUP_ID, BINDING_NEW_GROUP_ID] {
-        sqlx::query("DELETE FROM server_group WHERE id = $1")
-            .bind(group_id)
-            .execute(pool)
-            .await
-            .expect("remove binding-test group");
-    }
-}
-
-async fn reset_delete_fixture(pool: &PgPool) {
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(DELETE_USER_ID)
-        .execute(pool)
-        .await
-        .expect("remove delete-race user");
-    sqlx::query("DELETE FROM plan WHERE id = $1")
-        .bind(DELETE_PLAN_ID)
-        .execute(pool)
-        .await
-        .expect("remove delete-race plan");
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(DELETE_GROUP_ID)
-        .execute(pool)
-        .await
-        .expect("remove delete-race group");
 }

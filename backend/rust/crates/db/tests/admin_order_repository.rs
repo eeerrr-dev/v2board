@@ -1,27 +1,22 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
-use v2board_application::admin_order::{
-    AdminOrderQuery, AdminOrderRepository, AssignOrderCommand, AssignOrderOutcome,
-    AssignOrderPolicy, CancelOrderOutcome, Comparison, OrderField, OrderPatch, OrderPredicate,
-    OrderSort, PatchOrderOutcome, PendingOrderOutcome, SortDirection,
+use sqlx::PgPool;
+use v2board_application::{
+    admin_order::{
+        AdminOrderQuery, AdminOrderRepository, AssignOrderCommand, AssignOrderOutcome,
+        AssignOrderPolicy, CancelOrderOutcome, OrderField, OrderPatch, OrderSort,
+        PatchOrderOutcome, PendingOrderOutcome, SortDirection,
+    },
+    filter_dsl::{FilterClause, FilterOperator, FilterValue},
 };
 use v2board_db::admin_order::PostgresAdminOrderRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn admin_order_repository_preserves_query_detail_and_write_transactions() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    sqlx::query(
-        "TRUNCATE payment_reconciliation, commission_log, orders, users, plan, payment_method, server_group \
-         RESTART IDENTITY CASCADE",
-    )
-    .execute(&pool)
-    .await
-    .expect("reset the disposable admin-order repository fixture");
-
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixture no longer needs a
+// shared-table TRUNCATE before it runs.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn admin_order_repository_preserves_query_detail_and_write_transactions(pool: PgPool) {
     let group_id: i32 = sqlx::query_scalar(
         "INSERT INTO server_group (name, created_at, updated_at) \
          VALUES ('Order group', 1, 1) RETURNING id",
@@ -71,10 +66,10 @@ async fn admin_order_repository_preserves_query_detail_and_write_transactions() 
     let repository = PostgresAdminOrderRepository::new(pool.clone());
     let page = repository
         .list(AdminOrderQuery {
-            predicates: vec![OrderPredicate::CompareInteger {
+            predicates: vec![FilterClause {
                 field: OrderField::Status,
-                comparison: Comparison::Equal,
-                value: 0,
+                operator: FilterOperator::Eq,
+                value: FilterValue::Integer(0),
             }],
             sort: OrderSort {
                 field: OrderField::CreatedAt,
@@ -238,17 +233,4 @@ async fn insert_order(
     .fetch_one(pool)
     .await
     .expect("insert order fixture")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL migrations before the admin-order repository test");
-    pool
 }

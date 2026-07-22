@@ -27,7 +27,7 @@ export default defineConfig({
     include: [
       '@hookform/resolvers/zod',
       'radix-ui',
-      '@sentry/react',
+      '@v2board/app-shell > @sentry/react',
       '@stripe/react-stripe-js',
       '@stripe/stripe-js',
       '@stripe/stripe-js/pure',

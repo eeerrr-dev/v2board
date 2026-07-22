@@ -1,0 +1,21 @@
+[package]
+name = "v2board-telemetry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Shared process telemetry bootstrap: tracing subscriber setup, optional Sentry error reporting, and optional OTLP span export"
+
+[lints]
+workspace = true
+
+[dependencies]
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+sentry.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true

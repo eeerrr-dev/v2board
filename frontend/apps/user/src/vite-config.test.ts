@@ -92,14 +92,17 @@ for (const specifier of sharedUiThirdParty) {
 
 // Include entries that never appear as a direct source import: the JSX and React
 // Compiler runtimes the transform injects, the react-dom base entry (source
-// imports the /client subpath, plus /server in tests), and axios, which reaches
-// the bundle only transitively through @v2board/api-client.
+// imports the /client subpath, plus /server in tests), axios, which reaches
+// the bundle only transitively through @v2board/api-client, and @sentry/react,
+// which reaches the bundle only through @v2board/app-shell's dynamic
+// `import('@v2board/app-shell/sentry')` (never a static source import).
 const INJECTED_OR_TRANSITIVE = new Set([
   'react/jsx-runtime',
   'react/jsx-dev-runtime',
   'react/compiler-runtime',
   'react-dom',
   '@v2board/api-client > axios',
+  '@v2board/app-shell > @sentry/react',
 ]);
 
 describe('user Vite dev optimizer', () => {

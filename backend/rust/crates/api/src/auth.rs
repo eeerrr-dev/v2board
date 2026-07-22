@@ -13,8 +13,9 @@
 use axum::{
     Json,
     body::Body,
-    extract::{Extension, Query, State},
+    extract::{Extension, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
@@ -187,8 +188,10 @@ pub(crate) async fn password_reset(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /auth/step-up — re-verify the privileged password; the grant rides
-/// subsequent requests as `x-v2board-step-up` (§4.2).
+/// POST /auth/step-up — re-verify the password for any authenticated
+/// session (admin/staff privileged mutations and money-initiating user
+/// commerce routes alike); the grant rides subsequent requests as
+/// `x-v2board-step-up` (§4.2).
 pub(crate) async fn step_up(
     State(state): State<AppState>,
     Extension(ClientIp(client_ip)): Extension<ClientIp>,
@@ -199,9 +202,6 @@ pub(crate) async fn step_up(
     let user = require_user(&state, &headers)
         .await
         .map_err(|error| problem_from(error, locale))?;
-    if user.is_admin == 0 && user.is_staff == 0 {
-        return Err(Problem::localized(Code::PermissionDenied, locale));
-    }
     let auth = state.auth_service();
     let client_ip = client_ip.to_string();
     let token = auth
@@ -403,6 +403,28 @@ pub(crate) async fn require_user(
         .await
         .map_err(auth_error)
         .map_err(|error| error.relocalize_problem(locale))
+}
+
+/// Structural session gate for the `[User]` route group (mirrors
+/// `admin_guard`/`staff_guard` in `crate::admin`): every `/user/*` (plus the
+/// commerce and ticket families mounted alongside it) operation
+/// authenticates exactly once here instead of each handler independently
+/// calling [`require_user`]. A missing/expired/invalid session stays the
+/// global 401 `session_expired` problem; on success the resolved [`AuthUser`]
+/// is inserted into the request extensions so handlers read it through
+/// `Extension<AuthUser>` instead of re-checking auth themselves.
+pub(crate) async fn user_guard(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let locale = request_locale(request.headers());
+    let user = match require_user(&state, request.headers()).await {
+        Ok(user) => user,
+        Err(error) => return problem_from(error, locale).into_response(),
+    };
+    request.extensions_mut().insert(user);
+    next.run(request).await
 }
 
 /// The Authorization header is the only accepted bearer transport, and since

@@ -5,7 +5,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
@@ -17,14 +17,11 @@ use v2board_api_contract::{
     user::{PasswordUpdateRequest, UserProfilePatch},
 };
 use v2board_application::account::{AccountError, AccountProfile, PreferenceChanges};
-use v2board_application::auth::UserSession;
+use v2board_application::auth::{AuthUser, UserSession};
 use v2board_compat::{ApiError, Code, Problem};
 
 use crate::{
-    auth::{auth_error, require_user},
-    dialect::DialectJson,
-    dialect::problem_from,
-    locale::request_locale,
+    auth::auth_error, dialect::DialectJson, dialect::problem_from, locale::request_locale,
     runtime::AppState,
 };
 
@@ -62,12 +59,10 @@ pub(crate) fn user_profile_body(row: AccountProfile) -> UserProfileBody {
 /// GET /user/profile — bare profile (§5.3).
 pub(crate) async fn user_profile(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<UserProfileBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let info = state
         .account_service()
         .profile(user.id)
@@ -80,13 +75,11 @@ pub(crate) async fn user_profile(
 /// PATCH /user/profile — 204 on success (§5.3, §4.4).
 pub(crate) async fn user_profile_update(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<UserProfilePatch>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .account_service()
         .update_preferences(
@@ -108,13 +101,11 @@ pub(crate) async fn user_profile_update(
 /// every session; the client redirect to /login is the Tier-1 outcome.
 pub(crate) async fn user_password_update(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<PasswordUpdateRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .auth_service()
         .change_password(user.id, &payload.old_password, &payload.new_password)
@@ -137,12 +128,10 @@ fn session_body(session: UserSession) -> SessionBody {
 /// GET /user/sessions — bare array (§5.3).
 pub(crate) async fn user_sessions(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<SessionBody>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let sessions = state
         .auth_service()
         .sessions(user.id, Some(&user.session_id))
@@ -157,13 +146,11 @@ pub(crate) async fn user_sessions(
 /// legacy boolean-true response.
 pub(crate) async fn user_session_delete(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .auth_service()
         .remove_session(user.id, &session_id)
@@ -177,12 +164,10 @@ pub(crate) async fn user_session_delete(
 /// became a DELETE).
 pub(crate) async fn user_telegram_binding_delete(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .account_service()
         .unbind_telegram(user.id, Utc::now().timestamp())
@@ -200,12 +185,7 @@ fn distribution_rate(value: Option<&str>) -> Option<f64> {
 
 pub(crate) async fn user_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
 ) -> Result<Json<UserConfig>, Problem> {
-    let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     Ok(Json(UserConfig {
         is_telegram: config.telegram_bot_enable,

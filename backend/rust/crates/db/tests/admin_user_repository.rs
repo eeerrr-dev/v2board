@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::admin_user::{
     AdminUserChanges, AdminUserListRequest, AdminUserRepository, CreateUsersCommand,
     CreateUsersOutcome, DeleteUsersOutcome, PreparedAccount, StaffUserChanges, UserFilterClause,
@@ -8,14 +8,12 @@ use v2board_db::admin_user::PostgresAdminUserRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn admin_user_repository_preserves_scoping_binding_and_destructive_guards() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    reset(&pool).await;
-
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixture no longer needs a
+// shared-table TRUNCATE before it runs.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn admin_user_repository_preserves_scoping_binding_and_destructive_guards(pool: PgPool) {
     let group_id: i32 = sqlx::query_scalar(
         "INSERT INTO server_group (name, created_at, updated_at) \
          VALUES ('Admin-user group', 1, 1) RETURNING id",
@@ -166,8 +164,6 @@ async fn admin_user_repository_preserves_scoping_binding_and_destructive_guards(
         .await
         .expect("verify deleted user");
     assert!(!beta_exists);
-
-    reset(&pool).await;
 }
 
 fn account(email: &str, token: &str) -> PreparedAccount {
@@ -178,27 +174,4 @@ fn account(email: &str, token: &str) -> PreparedAccount {
         uuid: format!("00000000-0000-4000-8000-{:012}", token.len()),
         token: token.to_string(),
     }
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL baseline for admin-user repository test");
-    pool
-}
-
-async fn reset(pool: &PgPool) {
-    sqlx::query(
-        "TRUNCATE payment_reconciliation, commission_log, orders, ticket_message, ticket, \
-         invite_code, gift_card_redemption, users, plan, server_group RESTART IDENTITY CASCADE",
-    )
-    .execute(pool)
-    .await
-    .expect("reset disposable admin-user repository fixture");
 }

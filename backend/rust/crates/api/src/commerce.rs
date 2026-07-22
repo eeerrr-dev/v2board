@@ -6,7 +6,7 @@
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
@@ -27,6 +27,7 @@ use v2board_api_contract::{
     },
 };
 use v2board_application::{
+    auth::AuthUser,
     order::{
         AvailablePaymentMethod, CheckoutOutcome as ApplicationCheckoutOutcome, OrderError,
         OrderFailure, SaveOrderInput, StripePaymentIntent as ApplicationStripePaymentIntent,
@@ -39,8 +40,8 @@ use v2board_compat::{ApiError, Code, Problem};
 use v2board_domain_model::{Coupon, CouponRuleViolation, MoneyMinor, PlanPricePeriod};
 
 use crate::{
-    auth::require_user, dialect::DialectJson, dialect::problem_from, locale::request_locale,
-    runtime::AppState,
+    auth::require_privileged_step_up, dialect::DialectJson, dialect::problem_from,
+    locale::request_locale, runtime::AppState,
 };
 
 /// A handler-constructed problem with a legacy-derived custom detail, pushed
@@ -201,9 +202,6 @@ pub(crate) async fn plans_list(
     headers: HeaderMap,
 ) -> Result<Json<Vec<PlanBody>>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let plans = state
         .order_service()
         .catalog_plans()
@@ -216,13 +214,11 @@ pub(crate) async fn plans_list(
 /// legacy hidden-plan availability rules) is 404 plan_not_found (§3.4).
 pub(crate) async fn plan_detail(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(id): Path<i32>,
     headers: HeaderMap,
 ) -> Result<Json<PlanBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let plan = state
         .order_service()
         .catalog_plan(user.id, id)
@@ -235,13 +231,11 @@ pub(crate) async fn plan_detail(
 /// the created identity.
 pub(crate) async fn order_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(request): DialectJson<CreateOrderRequest>,
 ) -> Result<(StatusCode, Json<CreatedOrder>), Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let input = match request {
         CreateOrderRequest::Plan(plan) => {
             let period = plan_price_period_from_wire(&plan.period).ok_or_else(|| {
@@ -287,13 +281,11 @@ pub(crate) struct OrdersListQuery {
 /// GET /user/orders?status= — bare array (§5.5).
 pub(crate) async fn orders_list(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Query(query): Query<OrdersListQuery>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<OrderBody>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let orders = state
         .order_service()
         .orders(user.id, query.status)
@@ -306,13 +298,11 @@ pub(crate) async fn orders_list(
 /// (§3.4: every modern order route carries `trade_no` in the path).
 pub(crate) async fn order_detail(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(trade_no): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<OrderBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let order = state
         .order_service()
         .order(user.id, &trade_no)
@@ -324,13 +314,11 @@ pub(crate) async fn order_detail(
 /// GET /user/orders/{trade_no}/status — bare `{status}` (§5.5/§9.4).
 pub(crate) async fn order_status(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(trade_no): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<OrderStatusBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let status = state
         .order_service()
         .status(user.id, &trade_no)
@@ -343,13 +331,11 @@ pub(crate) async fn order_status(
 /// boolean body → 204/problem (§5.5).
 pub(crate) async fn order_cancel(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(trade_no): Path<String>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .order_service()
         .cancel(user.id, trade_no)
@@ -376,15 +362,20 @@ pub(crate) fn stripe_payment_intent(intent: ApplicationStripePaymentIntent) -> S
     }
 }
 
-/// POST /user/orders/{trade_no}/checkout — the §9.3 union.
+/// POST /user/orders/{trade_no}/checkout — the §9.3 union. Money-initiating
+/// (settles from balance/gift-card funds or hands off to an external
+/// gateway), so it carries the same step-up gate as privileged admin
+/// mutations: a recent password authentication or a valid `x-v2board-step-up`
+/// token, else 403 `step_up_required` (never a session teardown).
 pub(crate) async fn order_checkout(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(trade_no): Path<String>,
     headers: HeaderMap,
     DialectJson(request): DialectJson<CheckoutRequest>,
 ) -> Result<Json<CheckoutOutcome>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
+    require_privileged_step_up(&state, &headers, &user)
         .await
         .map_err(|error| problem_from(error, locale))?;
     let result = state
@@ -397,15 +388,18 @@ pub(crate) async fn order_checkout(
 
 /// POST /user/orders/{trade_no}/stripe-intent — bare
 /// `{public_key, client_secret, amount, currency}` (§5.5). The Stripe
-/// external payloads behind it are byte-frozen (§2).
+/// external payloads behind it are byte-frozen (§2). Creating a real Stripe
+/// PaymentIntent is money-initiating, so it carries the same step-up gate as
+/// `order_checkout`.
 pub(crate) async fn order_stripe_intent(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(trade_no): Path<String>,
     headers: HeaderMap,
     DialectJson(request): DialectJson<StripeIntentRequest>,
 ) -> Result<Json<StripePaymentIntent>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
+    require_privileged_step_up(&state, &headers, &user)
         .await
         .map_err(|error| problem_from(error, locale))?;
     let intent = state
@@ -422,9 +416,6 @@ pub(crate) async fn payment_methods(
     headers: HeaderMap,
 ) -> Result<Json<Vec<PaymentMethodBody>>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let methods = state
         .order_service()
         .payment_methods()
@@ -435,13 +426,11 @@ pub(crate) async fn payment_methods(
 
 pub(crate) async fn coupon_check(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(request): DialectJson<CouponCheckRequest>,
 ) -> Result<Json<CouponBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let coupon = state
         .promotion_service()
         .check_coupon(

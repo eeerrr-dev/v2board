@@ -95,7 +95,7 @@ vi.mock('@/components/user-traffic-modal', () => ({
 
 vi.mock('@v2board/ui/confirm-dialog', () => ({ confirmDialog: mocks.confirm }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     loading: (...args: unknown[]) => mocks.toastLoading(...args),
     dismiss: (...args: unknown[]) => mocks.toastDismiss(...args),

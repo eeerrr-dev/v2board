@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::State,
+    extract::{Extension, State},
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
@@ -9,6 +9,7 @@ use v2board_api_contract::user::UserPlan;
 pub(crate) use v2board_api_contract::user::{
     ResetSubscriptionToken as ResetTokenBody, Subscription as SubscriptionBody,
 };
+use v2board_application::auth::AuthUser;
 use v2board_application::subscription::{
     SubscriptionAccessError, SubscriptionError, SubscriptionPlan, SubscriptionTokenMethod,
 };
@@ -16,10 +17,7 @@ use v2board_compat::{ApiError, Code, Problem};
 use v2board_domain_model::{MoneyMinor, PlanPricePeriod};
 
 use crate::{
-    auth::{auth_error, require_user},
-    dialect::problem_from,
-    locale::request_locale,
-    runtime::AppState,
+    auth::auth_error, dialect::problem_from, locale::request_locale, runtime::AppState,
     validation::forbidden,
 };
 
@@ -99,12 +97,10 @@ fn subscription_error(error: SubscriptionError) -> ApiError {
 /// GET /user/subscription — bare subscription (§5.4).
 pub(crate) async fn user_subscription(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<SubscriptionBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     let overview = state
         .subscription_service()
@@ -145,12 +141,10 @@ pub(crate) async fn user_subscription(
 /// outcome is Tier-1.
 pub(crate) async fn subscription_reset_token(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<ResetTokenBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let subscribe_url = state
         .auth_service()
         .reset_security(user.id)
@@ -164,12 +158,10 @@ pub(crate) async fn subscription_reset_token(
 /// non-CRUD action verb; any request body is ignored (`{}` allowed).
 pub(crate) async fn subscription_new_period(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     state
         .subscription_service()

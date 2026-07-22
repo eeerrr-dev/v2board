@@ -9,7 +9,7 @@ import { ErrorState } from '@v2board/ui/error-state';
 import { Input } from '@v2board/ui/input';
 import { cn } from '@v2board/ui/cn';
 import { formatBackendDateMinuteSlash } from '@v2board/config/format';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { useReplyTicketMutation, useTicket } from '@/lib/queries';
 import { translateRuntimeMessage } from '@v2board/ui/translate-runtime-message';
 

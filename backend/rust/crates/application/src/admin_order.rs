@@ -4,7 +4,10 @@
 //! configuration, and RFC problem rendering stay in outer adapters. This
 //! module owns the closed query vocabulary and order orchestration policy.
 
-use crate::RepositoryError;
+use crate::{
+    RepositoryError,
+    filter_dsl::{ColumnKind, FilterClause, FilterField},
+};
 
 pub type RepositoryResult<T> = Result<T, RepositoryError>;
 
@@ -91,13 +94,6 @@ pub struct AdminOrderPage {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OrderFieldKind {
-    Integer,
-    Text,
-    Timestamp,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderField {
     Id,
     InviteUserId,
@@ -154,58 +150,58 @@ impl OrderField {
         })
     }
 
-    pub const fn kind(self) -> OrderFieldKind {
+    pub const fn kind(self) -> ColumnKind {
         match self {
-            Self::Period | Self::TradeNo | Self::CallbackNo => OrderFieldKind::Text,
-            Self::PaidAt | Self::CreatedAt | Self::UpdatedAt => OrderFieldKind::Timestamp,
-            _ => OrderFieldKind::Integer,
+            Self::Period | Self::TradeNo | Self::CallbackNo => ColumnKind::Text,
+            Self::PaidAt | Self::CreatedAt | Self::UpdatedAt => ColumnKind::Timestamp,
+            _ => ColumnKind::Integer,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Comparison {
-    Equal,
-    NotEqual,
-    Greater,
-    GreaterOrEqual,
-    Less,
-    LessOrEqual,
+impl FilterField for OrderField {
+    fn parse(name: &str) -> Option<Self> {
+        Self::from_name(name)
+    }
+
+    fn name(self) -> &'static str {
+        // `from_name`/`kind` are the code-owned column-registry entries;
+        // this reverse mapping only feeds validation-error messages.
+        match self {
+            Self::Id => "id",
+            Self::InviteUserId => "invite_user_id",
+            Self::UserId => "user_id",
+            Self::PlanId => "plan_id",
+            Self::CouponId => "coupon_id",
+            Self::PaymentId => "payment_id",
+            Self::Type => "type",
+            Self::Period => "period",
+            Self::TradeNo => "trade_no",
+            Self::CallbackNo => "callback_no",
+            Self::TotalAmount => "total_amount",
+            Self::HandlingAmount => "handling_amount",
+            Self::DiscountAmount => "discount_amount",
+            Self::SurplusAmount => "surplus_amount",
+            Self::RefundAmount => "refund_amount",
+            Self::BalanceAmount => "balance_amount",
+            Self::Status => "status",
+            Self::CommissionStatus => "commission_status",
+            Self::CommissionBalance => "commission_balance",
+            Self::ActualCommissionBalance => "actual_commission_balance",
+            Self::PaidAt => "paid_at",
+            Self::CreatedAt => "created_at",
+            Self::UpdatedAt => "updated_at",
+        }
+    }
+
+    fn kind(self) -> ColumnKind {
+        self.kind()
+    }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OrderPredicate {
-    IsNull {
-        field: OrderField,
-        negated: bool,
-    },
-    CompareInteger {
-        field: OrderField,
-        comparison: Comparison,
-        value: i64,
-    },
-    CompareText {
-        field: OrderField,
-        comparison: Comparison,
-        value: String,
-    },
-    ContainsInteger {
-        field: OrderField,
-        escaped_pattern: String,
-    },
-    ContainsText {
-        field: OrderField,
-        escaped_pattern: String,
-    },
-    InInteger {
-        field: OrderField,
-        values: Vec<i64>,
-    },
-    InText {
-        field: OrderField,
-        values: Vec<String>,
-    },
-}
+/// One AND-combined admin-order filter clause, built on the shared
+/// table-driven engine (`crate::filter_dsl`, docs/api-dialect.md §7.1).
+pub type OrderFilterClause = FilterClause<OrderField>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SortDirection {
@@ -230,7 +226,7 @@ impl Default for OrderSort {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminOrderQuery {
-    pub predicates: Vec<OrderPredicate>,
+    pub predicates: Vec<OrderFilterClause>,
     pub sort: OrderSort,
     pub commission_only: bool,
     pub limit: i64,
@@ -554,18 +550,6 @@ fn classify_lifecycle_error(error: AdminOrderLifecycleError) -> AdminOrderError 
     }
 }
 
-#[must_use]
-pub fn escape_like_pattern(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        if matches!(character, '%' | '_' | '\\') {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    escaped
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -736,11 +720,10 @@ mod tests {
     }
 
     #[test]
-    fn field_vocabulary_and_like_escaping_are_closed() {
+    fn field_vocabulary_is_closed() {
         assert_eq!(OrderField::from_name("trade_no"), Some(OrderField::TradeNo));
-        assert_eq!(OrderField::TradeNo.kind(), OrderFieldKind::Text);
-        assert_eq!(OrderField::PaidAt.kind(), OrderFieldKind::Timestamp);
+        assert_eq!(OrderField::TradeNo.kind(), ColumnKind::Text);
+        assert_eq!(OrderField::PaidAt.kind(), ColumnKind::Timestamp);
         assert!(OrderField::from_name("raw_sql").is_none());
-        assert_eq!(escape_like_pattern(r"a%b_c\d"), r"a\%b\_c\\d");
     }
 }

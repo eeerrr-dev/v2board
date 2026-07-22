@@ -6,7 +6,7 @@
 
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use chrono::Utc;
@@ -17,6 +17,7 @@ use v2board_api_contract::{
     user::CommissionTransferRequest,
     user_activity::{CommissionView, InviteCodeView, InviteStatView, InviteView},
 };
+use v2board_application::auth::AuthUser;
 use v2board_application::invite::{
     CommissionEntry, CommissionTransferPolicy, InviteCode, InviteError, InviteOverview,
     InviteStatistics,
@@ -24,8 +25,7 @@ use v2board_application::invite::{
 use v2board_compat::{ApiError, Code, Pagination, Problem};
 
 use crate::{
-    auth::require_user, dialect::DialectJson, dialect::problem_from, locale::request_locale,
-    runtime::AppState,
+    dialect::DialectJson, dialect::problem_from, locale::request_locale, runtime::AppState,
 };
 
 /// §8: `/user/commissions` keeps the legacy default page size.
@@ -50,13 +50,11 @@ fn invite_error(error: InviteError) -> ApiError {
 /// POST /user/commission-transfers — 204 on success (§5.3, W7).
 pub(crate) async fn commission_transfer_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<CommissionTransferRequest>,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     state
         .invite_service()
@@ -94,12 +92,10 @@ pub(super) fn checked_transfer_balances(
 /// SPA refetches `GET /user/invite` instead of consuming a created id.
 pub(crate) async fn invite_code_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<StatusCode, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .invite_service()
         .create_invite_code(
@@ -152,12 +148,10 @@ fn invite_view(row: InviteOverview) -> InviteView {
 /// GET /user/invite — bare `{codes, stat}` (§5.6).
 pub(crate) async fn invite_get(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<InviteView>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let data = state
         .invite_service()
         .overview(user.id)
@@ -189,13 +183,11 @@ fn commission_view(row: CommissionEntry) -> CommissionView {
 /// envelope (was `/user/invite/details` with `current`/`page_size`).
 pub(crate) async fn commissions_list(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Query(query): Query<CommissionsQuery>,
     headers: HeaderMap,
 ) -> Result<Json<Page<CommissionView>>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let pagination = Pagination::resolve(query.page, query.per_page, COMMISSIONS_DEFAULT_PER_PAGE)?;
     let page = state
         .invite_service()

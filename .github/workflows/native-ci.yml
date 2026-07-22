@@ -180,6 +180,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Assert MySQL-import doc invariants stay in lockstep with the canonical contract
+        run: make mysql-import-doc-audit
+
+      - name: Assert frontend package.json versions stay in lockstep with the Cargo workspace version
+        run: make version-consistency-audit
+
       - name: Install ripgrep for the Makefile audit targets
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ripgrep
 

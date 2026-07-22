@@ -1,6 +1,6 @@
 .PHONY: up down reset sync logs ps shell doctor \
 	rust-check rust-test rust-integration rust-route-audit rust-worker-reconcile rust-target-gate contract-goldens api-contract-generate api-contract-check \
-	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit deploy-contract-audit \
+	public-bundle-audit runtime-isolation-audit native-database-audit cloudflared-config-audit native-release-audit frontend-source-audit parity-config-audit ui-sync-audit deploy-contract-audit version-consistency-audit mysql-import-doc-audit \
 	deploy-artifact-smoke deploy-smoke visual-smoke interaction-parity legacy-oracle-parity real-stack-e2e accessibility-smoke behavior-parity \
 	reference-oracle-check reference-oracle-up reference-oracle-down \
 	clean-frontend-runs clean-host clean-host-apply mailpit-ui admin-url
@@ -32,6 +32,24 @@ SOURCE_BASE_URL ?= http://rust-api:8080
 # backend/rust/crates/provision/src/release_archive.rs (release inspection);
 # `make deploy-contract-audit` fails when any copy drifts.
 FORBIDDEN_LEGACY_NAMES := components.chunk.css vendors.async.js components.async.js custom.css custom.js env.example.js umi.css umi.js
+# Non-canonical docs that summarize (and must stay consistent with) the
+# MySQL-import invariants pinned in docs/mysql-import-invariants.md.
+# `make mysql-import-doc-audit` fails when a restated number or the
+# ClickHouse-target-must-not-preexist phrasing drifts (see commit bef28c3f,
+# which fixed only 2 of these documents).
+MYSQL_IMPORT_DOC_AUDIT_FILES := AGENTS.md README.md docs/mysql-import.md \
+	backend/README.md deploy/README.md docs/postgresql-clickhouse-invariants.md \
+	docs/adr/0005-one-shot-mysql-import-copy-stream.md
+# The single authoritative product version lives in
+# backend/rust/Cargo.toml `[workspace.package] version`
+# (docs/release-process.md §1); every frontend package.json version field is
+# kept in manual lockstep with it. `make version-consistency-audit` fails
+# when any copy drifts.
+VERSION_CONSISTENCY_AUDIT_FILES := frontend/package.json \
+	frontend/apps/user/package.json frontend/apps/admin/package.json \
+	frontend/packages/api-client/package.json frontend/packages/app-shell/package.json \
+	frontend/packages/config/package.json frontend/packages/i18n/package.json \
+	frontend/packages/types/package.json frontend/packages/ui/package.json
 RUST_WORKER_RECONCILE_WAIT_SECONDS ?= 75
 RUST_WORKER_RECONCILE_STRICT ?= 1
 VISUAL_PARITY_VIEWPORTS ?= desktop mobile
@@ -119,6 +137,8 @@ doctor:
 	$(MAKE) --no-print-directory parity-config-audit
 	$(MAKE) --no-print-directory ui-sync-audit
 	$(MAKE) --no-print-directory deploy-contract-audit
+	$(MAKE) --no-print-directory version-consistency-audit
+	$(MAKE) --no-print-directory mysql-import-doc-audit
 	@echo "Docker configuration, host cleanliness, runtime isolation, parity configuration, and shared UI synchronization are valid."
 
 rust-check:
@@ -216,36 +236,36 @@ rust-integration:
 		-e RUST_INTEGRATION_LEGACY_MYSQL_URL=mysql://legacy_reader:LegacySourceReadOnlyTestSecret-32-bytes@legacy-mysql-source:3306/v2board_legacy \
 		-e RUST_INTEGRATION_LEGACY_MYSQL_FIXTURE_ADMIN_URL=mysql://root:root-import-test-secret@legacy-mysql-source:3306/v2board_legacy \
 		-e RUST_INTEGRATION_IMPORT_POSTGRES_URL=postgresql://v2board:v2board@postgres:5432/v2board_import_target_test \
-		-e RUST_INTEGRATION_SCHEMA_DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
+		-e DATABASE_URL=postgresql://v2board:v2board@postgres:5432/v2board_schema_test \
 		-e RUST_INTEGRATION_EXECUTE_DATABASE_ROOT_URL=postgresql://import_bootstrap:ImportBootstrapTestSecret-32-bytes@postgres-import-target:5432/postgres \
 		-e RUST_INTEGRATION_EXECUTE_REDIS_URL=redis://import_bootstrap:RedisImportBootstrapTestSecret-32-bytes@redis-import-target:6379/0 \
 		rust-api -lc \
 		'set -euo pipefail; . /usr/local/cargo/env; \
-		 cargo test --locked -p v2board-lifecycle imported_source_schema_matches_oracle_mysql_8_legacy_fixture; \
-		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres; \
-		 cargo test --locked -p v2board-db --test plan_binding_concurrency -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test auth_repository; \
+		 cargo test --locked -p v2board-lifecycle imported_source_schema_matches_oracle_mysql_8_legacy_fixture -- --ignored; \
+		 cargo test --locked -p v2board-lifecycle representative_mysql_rows_copy_into_fresh_postgres -- --ignored; \
+		 cargo test --locked -p v2board-db --test plan_binding_concurrency -- --ignored; \
+		 cargo test --locked -p v2board-db --test auth_repository -- --ignored; \
 		 RUST_INTEGRATION_REDIS_URL="$$REDIS_URL" cargo test --locked -p v2board-auth-adapters --test redis_auth_cache; \
-		 cargo test --locked -p v2board-db --test content_repository; \
-		 cargo test --locked -p v2board-db --test giftcard_repository; \
-		 cargo test --locked -p v2board-db --test promotion_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test payment_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test reconciliation_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test plan_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test admin_order_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test order_jobs_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test admin_user_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test telegram_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-mail-adapters --test worker_mail_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test maintenance_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test operator_access_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test server_management_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test worker_traffic_statistics_repository -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test ticket_repository; \
-		 cargo test --locked -p v2board-db --test plan_sort_exact -- --test-threads=1; \
-		 cargo test --locked -p v2board-db --test plan_price_concurrency; \
+		 cargo test --locked -p v2board-db --test content_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test giftcard_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test promotion_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test payment_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test reconciliation_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test plan_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test admin_order_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test order_jobs_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test admin_user_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test telegram_repository -- --ignored; \
+		 cargo test --locked -p v2board-mail-adapters --test worker_mail_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test maintenance_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test operator_access_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test server_management_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test worker_traffic_statistics_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test ticket_repository -- --ignored; \
+		 cargo test --locked -p v2board-db --test plan_sort_exact -- --ignored; \
+		 cargo test --locked -p v2board-db --test plan_price_concurrency -- --ignored; \
 		 cargo test --locked -p v2board-lifecycle -- --list | grep -Fx "mysql_import::tests::full_execute_bootstraps_and_retires_every_principal: test"; \
-		 cargo test --locked -p v2board-lifecycle mysql_import::tests::full_execute_bootstraps_and_retires_every_principal -- --exact; \
+		 cargo test --locked -p v2board-lifecycle mysql_import::tests::full_execute_bootstraps_and_retires_every_principal -- --exact --ignored; \
 		 cargo test --locked -p v2board-analytics --test clickhouse_roundtrip; \
 		 cargo test --locked -p v2board-analytics --test outbox_roundtrip; \
 		 cargo build --locked -p v2board-workers; \
@@ -563,6 +583,61 @@ deploy-contract-audit:
 	grep -qF "$$head_token" frontend/apps/user/index.html || { echo "user index.html lost the head social-meta marker"; exit 1; }; \
 	if grep -qF "$$head_token" frontend/apps/admin/index.html; then echo "admin index.html must not carry the user-only head social-meta marker"; exit 1; fi; \
 	echo "Deploy-seam contract copies are in lockstep."
+
+# Cross-checks the single authoritative product version (backend/rust/Cargo.toml
+# `[workspace.package] version`, per docs/release-process.md §1) against every
+# frontend package.json `version` field that is kept in manual lockstep with
+# it. Runs on the host against tracked sources only.
+version-consistency-audit:
+	@set -eu; \
+	cargo_version="$$(sed -n '/^\[workspace.package\]/,/^\[/p' backend/rust/Cargo.toml | sed -n 's/^version = "\(.*\)"$$/\1/p')"; \
+	test -n "$$cargo_version" || { echo "could not read [workspace.package] version from backend/rust/Cargo.toml"; exit 1; }; \
+	fail=0; \
+	for f in $(VERSION_CONSISTENCY_AUDIT_FILES); do \
+		test -f "$$f" || { echo "missing tracked package.json: $$f (update Makefile VERSION_CONSISTENCY_AUDIT_FILES)"; fail=1; continue; }; \
+		pkg_version="$$(sed -n 's/^  "version": "\(.*\)",$$/\1/p' "$$f")"; \
+		[ -n "$$pkg_version" ] || { echo "$$f has no top-level \"version\" field"; fail=1; continue; }; \
+		[ "$$pkg_version" = "$$cargo_version" ] || { echo "$$f version $$pkg_version drifted from backend/rust/Cargo.toml [workspace.package] version $$cargo_version"; fail=1; }; \
+	done; \
+	[ "$$fail" = "0" ] || exit 1; \
+	echo "Frontend package.json versions are in lockstep with backend/rust/Cargo.toml ($$cargo_version)."
+
+# Cross-checks the MySQL-import contract numbers and preexistence phrasing
+# that non-canonical docs restate alongside docs/mysql-import-invariants.md
+# (the canonical source): the hard-capped payment-id classification index
+# count, and the requirement that the ClickHouse (and PostgreSQL) import
+# targets must not already exist before `execute` runs. Runs on the host
+# against tracked sources only.
+mysql-import-doc-audit:
+	@set -eu; \
+	canonical="docs/mysql-import-invariants.md"; \
+	test -f "$$canonical" || { echo "canonical doc $$canonical is missing"; exit 1; }; \
+	extract_payment_id_caps() { \
+		grep -inE 'payment[-_]id' "$$1" | cut -d: -f1 | while read -r ln; do \
+			sed -n "$$((ln>1?ln-1:1)),$$((ln+1))p" "$$1"; \
+		done | grep -oE '[0-9]{1,3},[0-9]{3}|[0-9]{4,}' | tr -d ',' | sort -u; \
+	}; \
+	canonical_caps="$$(extract_payment_id_caps "$$canonical")"; \
+	[ "$$canonical_caps" = "4096" ] || { \
+		echo "$$canonical no longer states the payment-id classification index cap as exactly 4096 (found: $${canonical_caps:-none}); update this audit if the canonical value changed on purpose"; \
+		exit 1; \
+	}; \
+	fail=0; \
+	for f in $(MYSQL_IMPORT_DOC_AUDIT_FILES); do \
+		test -f "$$f" || { echo "missing tracked doc: $$f (update MYSQL_IMPORT_DOC_AUDIT_FILES)"; fail=1; continue; }; \
+		caps="$$(extract_payment_id_caps "$$f")"; \
+		for n in $$caps; do \
+			[ "$$n" = "4096" ] || { echo "$$f states a payment-id classification index cap of $$n, which drifted from the canonical 4096 in $$canonical"; fail=1; }; \
+		done; \
+		if grep -qiE 'clickhouse' "$$f" && grep -iE 'clickhouse' "$$f" | grep -qiE '没有旧事件|旧事件为空|no old event|empty native event|从空.*event history|starts (with an )?empty|starts without old events'; then \
+			grep -qiE '必须不存在|不存在，因此没有|must not already exist|must not.*exist before|absent postgresql/clickhouse|nonexistent.*clickhouse' "$$f" || { \
+				echo "$$f describes ClickHouse starting empty without the target-must-not-preexist precondition from $$canonical (the bef28c3f-class drift)"; \
+				fail=1; \
+			}; \
+		fi; \
+	done; \
+	[ "$$fail" = "0" ] || exit 1; \
+	echo "MySQL-import doc invariants (payment-id index cap, ClickHouse preexist rule) are in lockstep with $$canonical."
 
 reference-oracle-check:
 	@test -f references/wyx2685-v2board/public/theme/default/dashboard.blade.php || { \

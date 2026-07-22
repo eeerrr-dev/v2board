@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::task::JoinSet;
 use v2board_application::giftcard::{GiftCardError, GiftCardService};
 use v2board_db::giftcard::PostgresGiftCardRepository;
@@ -17,12 +17,12 @@ struct RedeemedPlanUser {
     expired_at: Option<i64>,
 }
 
-#[tokio::test]
-async fn giftcard_redemption_preserves_capacity_and_single_use_transactions() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn giftcard_redemption_preserves_capacity_and_single_use_transactions(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let now = 1_900_000_000_i64;
 
@@ -218,17 +218,4 @@ async fn insert_pending_order(pool: &PgPool, user_id: i64, plan_id: i32, marker:
     .execute(pool)
     .await
     .expect("insert reserved gift-card order");
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(6)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline");
-    pool
 }

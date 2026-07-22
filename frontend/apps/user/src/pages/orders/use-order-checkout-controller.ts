@@ -15,7 +15,7 @@ import {
 } from '@/lib/queries';
 import { confirmDialog } from '@v2board/ui/confirm-dialog';
 import type { StripePaymentFormHandle } from '@/components/stripe-payment-form';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 export interface OrderCheckoutController {
   /** Resolved order; absent while loading or after a failed detail request. */

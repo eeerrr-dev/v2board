@@ -1,9 +1,6 @@
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
-use sqlx::{
-    Connection, PgConnection, PgPool,
-    postgres::{PgConnectOptions, PgPoolOptions},
-};
+use sqlx::{Connection, PgConnection, PgPool, postgres::PgConnectOptions};
 use tokio::sync::oneshot;
 use v2board_db::plan::{PlanRow, find_plan_for_update};
 
@@ -13,23 +10,13 @@ const GROUP_ID: i32 = 2_000_000_001;
 const PLAN_ID: i32 = 2_000_000_001;
 const READER_APPLICATION_NAME: &str = "v2board-plan-price-lock-regression";
 
-#[tokio::test]
-async fn locked_plan_read_waits_then_observes_the_writers_committed_price() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(&database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline before the concurrency regression");
-    reset_fixture(&pool).await;
-
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixed fixture ids below can
+// no longer collide across tests or files and no longer need hand-written
+// DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn locked_plan_read_waits_then_observes_the_writers_committed_price(pool: PgPool) {
     sqlx::query(
         "INSERT INTO server_group (id, name, created_at, updated_at) \
          VALUES ($1, 'plan-price-concurrency', 1, 1)",
@@ -73,9 +60,9 @@ async fn locked_plan_read_waits_then_observes_the_writers_committed_price() {
     .expect("writer updates the normalized price without committing");
 
     let (reader_started_tx, reader_started_rx) = oneshot::channel();
-    let reader_database_url = database_url.clone();
+    let reader_options = (*pool.connect_options()).clone();
     let reader = tokio::spawn(async move {
-        read_plan_in_locking_transaction(reader_database_url, reader_started_tx).await
+        read_plan_in_locking_transaction(reader_options, reader_started_tx).await
     });
     let reader_backend_pid = reader_started_rx
         .await
@@ -103,16 +90,13 @@ async fn locked_plan_read_waits_then_observes_the_writers_committed_price() {
         Some(200),
         "the post-lock projection must use a fresh READ COMMITTED statement, not the stale snapshot from before the wait"
     );
-
-    reset_fixture(&pool).await;
 }
 
 async fn read_plan_in_locking_transaction(
-    database_url: String,
+    connect_options: PgConnectOptions,
     started: oneshot::Sender<i32>,
 ) -> Result<Option<PlanRow>, sqlx::Error> {
-    let options =
-        PgConnectOptions::from_str(&database_url)?.application_name(READER_APPLICATION_NAME);
+    let options = connect_options.application_name(READER_APPLICATION_NAME);
     let mut connection = PgConnection::connect_with(&options).await?;
     let mut transaction = connection.begin().await?;
     let backend_pid = sqlx::query_scalar("SELECT pg_backend_pid()")
@@ -153,17 +137,4 @@ async fn wait_until_reader_is_blocked_on_the_plan_lock(pool: &PgPool, reader_bac
     })
     .await
     .expect("reader never became blocked on the writer's parent plan lock");
-}
-
-async fn reset_fixture(pool: &PgPool) {
-    sqlx::query("DELETE FROM plan WHERE id = $1")
-        .bind(PLAN_ID)
-        .execute(pool)
-        .await
-        .expect("remove an existing concurrency-test plan fixture");
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(GROUP_ID)
-        .execute(pool)
-        .await
-        .expect("remove an existing concurrency-test group fixture");
 }

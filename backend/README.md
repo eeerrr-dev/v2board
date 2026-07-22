@@ -252,23 +252,16 @@ new role configs, verifies the result and starts the native services.
 The converter establishes one `REPEATABLE READ`, `READ ONLY`, consistent MySQL snapshot before schema
 inspection or row conversion, rejects every extra grant/role/`GRANT OPTION`, requires InnoDB for every
 imported source table, then writes outbound to the new PostgreSQL target with a temporary migration
-principal. It does not parse the dump or send MySQL SQL to PostgreSQL: the MySQL driver returns typed rows,
-the converter validates and maps each field explicitly, and the PostgreSQL driver gives every target table
-exactly one `COPY FROM STDIN` stream. Each source table uses one primary-key-ordered streaming `SELECT`;
-the gift-card source stream deterministically feeds its base and derived redemption targets.
-Memory is bounded to the current decoded row, byte-bounded COPY send buffers, and a hard-capped 4,096-entry
-payment-id classification index required by the fixed Stripe order policy. Those
-buffers are not PostgreSQL batches, and there is no fixed 1,000-row or other bulk
-`INSERT` path. No intermediate COPY/CSV or other row-transfer file is written. After every retained
-table has completed COPY, `execute` creates the deferred business/cross-row unique constraints, secondary
-indexes, and foreign keys, resets the
-affected sequences, runs `ANALYZE`, and scans each retained target table exactly once in primary-key order
-to compare its canonical representation with the source-derived canonical expectation accumulated during
-conversion. The old host and PostgreSQL target use authenticated TLS over a same-datacenter private
-network. There is no bulk-`INSERT` fallback, per-batch target verification, selectable transfer mode, or
-second transfer path. The new machine never runs MySQL. The legacy source keeps its real `v2_*` table names;
-native PostgreSQL and ClickHouse targets
-are unprefixed, using `users` and `orders` for the two PostgreSQL keyword conflicts.
+principal over authenticated TLS on a same-datacenter private network. It does not parse the dump or send
+MySQL SQL to PostgreSQL: the MySQL driver returns typed rows, the converter validates and maps each field
+explicitly, and the PostgreSQL driver gives every target table exactly one `COPY FROM STDIN` stream, verified
+afterward by one primary-key-ordered canonical scan per table. The new machine never runs MySQL. The legacy
+source keeps its real `v2_*` table names; native PostgreSQL and ClickHouse targets are unprefixed, using
+`users` and `orders` for the two PostgreSQL keyword conflicts. The exact per-row memory bounds (including the
+hard-capped 4,096-entry payment-id classification index), COPY/batch invariants, and ClickHouse/Redis
+preexistence requirements are pinned in
+[`docs/mysql-import-invariants.md`](../docs/mysql-import-invariants.md) — this section is a summary, not the
+source of truth for those numbers.
 
 The disposable CLI commands are:
 

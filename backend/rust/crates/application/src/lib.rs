@@ -11,6 +11,7 @@ pub mod audit;
 pub mod auth;
 pub mod configuration;
 pub mod content;
+pub mod filter_dsl;
 pub mod giftcard;
 pub mod invite;
 pub mod logs;

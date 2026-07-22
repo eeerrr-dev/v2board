@@ -1,20 +1,22 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::operator_access::{OperatorAccessRepository, OperatorMfaResetOutcome};
 use v2board_db::operator_access::PostgresOperatorAccessRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn operator_recovery_repository_enforces_privileged_roles_and_atomic_security_updates() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn operator_recovery_repository_enforces_privileged_roles_and_atomic_security_updates(
+    pool: PgPool,
+) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let admin_email = format!("operator-admin-{marker}@example.test");
     let user_email = format!("operator-user-{marker}@example.test");
     let admin_id = insert_user(&pool, &admin_email, true).await;
-    let user_id = insert_user(&pool, &user_email, false).await;
+    let _user_id = insert_user(&pool, &user_email, false).await;
     sqlx::query(
         "INSERT INTO admin_mfa \
          (user_id, secret_nonce, secret_ciphertext, secret_tag, enabled_at, last_step, created_at, updated_at) \
@@ -74,12 +76,6 @@ async fn operator_recovery_repository_enforces_privileged_roles_and_atomic_secur
             .expect("reject non-administrator password reset"),
         None
     );
-
-    sqlx::query("DELETE FROM users WHERE id = ANY($1)")
-        .bind(vec![admin_id, user_id])
-        .execute(&pool)
-        .await
-        .expect("remove operator recovery fixtures");
 }
 
 async fn insert_user(pool: &PgPool, email: &str, admin: bool) -> i64 {
@@ -95,17 +91,4 @@ async fn insert_user(pool: &PgPool, email: &str, admin: bool) -> i64 {
     .fetch_one(pool)
     .await
     .expect("insert operator recovery user")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline for operator recovery");
-    pool
 }

@@ -14,7 +14,7 @@ import {
   useUserInfo,
 } from '@/lib/queries';
 import { copyText } from '@v2board/config/clipboard';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { ProfileConfirmDialog, SectionIcon } from './profile-ui';
 
 export function TelegramBindCard() {

@@ -1,16 +1,20 @@
 //! Gift-card redemption inbound adapter (docs/api-dialect.md §5.3/§9.4).
 
-use axum::{Json, extract::State, http::HeaderMap};
+use axum::{
+    Json,
+    extract::{Extension, State},
+    http::HeaderMap,
+};
 use chrono::Utc;
 pub(crate) use v2board_api_contract::user::GiftCardRedemption as GiftCardRedemptionBody;
 use v2board_api_contract::user::GiftCardRedemptionRequest;
+use v2board_application::auth::AuthUser;
 use v2board_application::giftcard::{GiftCardError, GiftCardRedemption};
 use v2board_compat::{ApiError, Code, Problem};
 use v2board_domain_model::GiftCardRuleViolation;
 
 use crate::{
-    auth::require_user, dialect::DialectJson, dialect::problem_from, locale::request_locale,
-    runtime::AppState,
+    dialect::DialectJson, dialect::problem_from, locale::request_locale, runtime::AppState,
 };
 
 fn invalid_card(detail: &'static str) -> ApiError {
@@ -79,13 +83,11 @@ fn redemption_body(redemption: GiftCardRedemption) -> GiftCardRedemptionBody {
 /// POST /user/gift-card-redemptions — bare `{type, value}` (§5.3/§9.4).
 pub(crate) async fn gift_card_redemption_create(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     DialectJson(payload): DialectJson<GiftCardRedemptionRequest>,
 ) -> Result<Json<GiftCardRedemptionBody>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     state
         .giftcard_service()
         .redeem(user.id, payload.giftcard, Utc::now().timestamp())

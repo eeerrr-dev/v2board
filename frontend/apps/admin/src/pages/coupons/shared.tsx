@@ -3,7 +3,7 @@ import type { SelectorParam } from 'i18next';
 import type { admin } from '@v2board/api-client';
 import type { AdminPlanModel, Coupon, Giftcard } from '@v2board/types';
 import { copyText } from '@v2board/config/clipboard';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { Badge } from '@v2board/ui/badge';
 
 export type CouponSubmit = admin.GenerateCouponPayload;

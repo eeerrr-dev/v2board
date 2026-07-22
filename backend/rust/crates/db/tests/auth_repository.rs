@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::auth::{
     AuthRepository, InsertAuthAccountOutcome, NewAuthAccount, RegistrationTransaction,
 };
@@ -6,12 +6,12 @@ use v2board_db::auth::PostgresAuthRepository;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn registration_transaction_locks_consumes_and_persists_as_one_postgres_unit() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn registration_transaction_locks_consumes_and_persists_as_one_postgres_unit(pool: PgPool) {
     let repository = PostgresAuthRepository::new(pool.clone());
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let now = 1_900_000_000_i64;
@@ -171,17 +171,4 @@ async fn insert_user(pool: &PgPool, email: &str) -> i64 {
     .fetch_one(pool)
     .await
     .expect("insert auth test user")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline");
-    pool
 }

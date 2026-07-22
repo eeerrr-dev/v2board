@@ -18,7 +18,7 @@ vi.mock('@v2board/api-client', async (importOriginal) => {
 });
 
 const toastSuccess = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
+vi.mock('@v2board/app-shell/toast', () => ({ toast: { success: toastSuccess, error: vi.fn() } }));
 
 const STEP_UP_403 = new ApiProblemError(403, {
   type: 'about:blank',

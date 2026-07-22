@@ -4,7 +4,7 @@ import { Copy, Import as ImportIcon, QrCode } from 'lucide-react';
 import { Button } from '@v2board/ui/button';
 import { copyText } from '@v2board/config/clipboard';
 import { getSiteTitle } from '@/lib/runtime-config';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 interface DashboardSubscribeMenuProps {
   onOpenQr: () => void;

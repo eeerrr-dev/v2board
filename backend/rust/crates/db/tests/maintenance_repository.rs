@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::maintenance::{
     RetentionCutoff, RetentionDataset, RetentionService, ScheduledTrafficResetRun,
     ScheduledTrafficResetService, TrafficResetCalendar,
@@ -18,12 +18,12 @@ impl TrafficResetCalendar for FixtureCalendar {
     }
 }
 
-#[tokio::test]
-async fn maintenance_use_cases_reset_idempotently_and_prune_bounded_rows() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn maintenance_use_cases_reset_idempotently_and_prune_bounded_rows(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let group_id: i32 = sqlx::query_scalar(
         "INSERT INTO server_group (name, created_at, updated_at) VALUES ($1, 1, 1) RETURNING id",
@@ -158,37 +158,6 @@ async fn maintenance_use_cases_reset_idempotently_and_prune_bounded_rows() {
     assert!(row_exists(&pool, "server_traffic", new_server_traffic).await);
     assert!(!row_exists(&pool, "system_log", old_log).await);
     assert!(row_exists(&pool, "system_log", new_log).await);
-
-    sqlx::query("DELETE FROM user_traffic WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .expect("remove maintenance user traffic");
-    sqlx::query("DELETE FROM server_traffic WHERE id = ANY($1)")
-        .bind(vec![old_server_traffic, new_server_traffic])
-        .execute(&pool)
-        .await
-        .expect("remove maintenance server traffic");
-    sqlx::query("DELETE FROM system_log WHERE id = ANY($1)")
-        .bind(vec![old_log, new_log])
-        .execute(&pool)
-        .await
-        .expect("remove maintenance system logs");
-    sqlx::query("DELETE FROM users WHERE id = $1")
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .expect("remove maintenance user");
-    sqlx::query("DELETE FROM plan WHERE id = $1")
-        .bind(plan_id)
-        .execute(&pool)
-        .await
-        .expect("remove maintenance plan");
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(group_id)
-        .execute(&pool)
-        .await
-        .expect("remove maintenance server group");
 }
 
 async fn row_exists(pool: &PgPool, table: &str, id: i64) -> bool {
@@ -203,17 +172,4 @@ async fn row_exists(pool: &PgPool, table: &str, id: i64) -> bool {
         .fetch_one(pool)
         .await
         .expect("read maintenance fixture existence")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline for the maintenance repository test");
-    pool
 }

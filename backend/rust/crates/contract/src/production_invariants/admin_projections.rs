@@ -15,9 +15,10 @@ use v2board_application::{
     admin_order::{AdminOrderQuery, OrderSort},
     admin_user::{AdminUserListRequest, UserSort},
     content::{ContentService, KnowledgeArticle, KnowledgeSummary},
+    filter_dsl::{FilterClause, FilterOperator, FilterValue},
     logs::{
-        AuditLogField, AuditLogFilter, AuditLogQuery, LogService, SortDirection, SystemLogQuery,
-        SystemLogSort, TextPredicate,
+        AuditLogField, AuditLogQuery, LogService, SortDirection, SystemLogField, SystemLogQuery,
+        SystemLogSort,
     },
     promotion::{
         AdminCoupon as ApplicationAdminCoupon, GiftCard as ApplicationGiftCard, PromotionService,
@@ -659,7 +660,11 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
         .map_err(|problem| anyhow::anyhow!("system/logs pagination: {problem:?}"))?;
     let (log_rows, log_total) = logs
         .system_logs(SystemLogQuery {
-            level: vec![TextPredicate::Equal("info".to_string())],
+            level: vec![FilterClause {
+                field: SystemLogField::Level,
+                operator: FilterOperator::Eq,
+                value: FilterValue::Text("info".to_string()),
+            }],
             sort: SystemLogSort::CreatedAt,
             direction: SortDirection::Descending,
             limit: pagination.limit(),
@@ -700,9 +705,10 @@ pub(super) async fn admin_projection_key_sets(pool: &PgPool, redis_url: &str) ->
         .map_err(|problem| anyhow::anyhow!("system/audit-logs pagination: {problem:?}"))?;
     let (audit_rows, audit_total) = logs
         .audit_logs(AuditLogQuery {
-            filters: vec![AuditLogFilter {
+            filters: vec![FilterClause {
                 field: AuditLogField::Surface,
-                predicate: TextPredicate::Equal("admin".to_string()),
+                operator: FilterOperator::Eq,
+                value: FilterValue::Text("admin".to_string()),
             }],
             direction: SortDirection::Descending,
             limit: pagination.limit(),

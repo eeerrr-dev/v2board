@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::{
     ApplicationError,
     content::{
@@ -11,12 +11,12 @@ use v2board_domain_model::ContentVisibility;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn content_use_cases_round_trip_through_the_postgres_port() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn content_use_cases_round_trip_through_the_postgres_port(pool: PgPool) {
     let repository = PostgresContentRepository::new(pool.clone());
     let service = ContentService::new(repository.clone());
     let marker = format!("content-adapter-{}", uuid::Uuid::new_v4());
@@ -134,17 +134,4 @@ async fn content_use_cases_round_trip_through_the_postgres_port() {
         service.knowledge_detail(i64::from(knowledge_id)).await,
         Err(ApplicationError::KnowledgeNotFound)
     ));
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline");
-    pool
 }

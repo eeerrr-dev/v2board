@@ -20,6 +20,10 @@
     {
       "files": "packages/ui/**",
       "options": { "tailwindStylesheet": "apps/user/src/styles/globals.css" }
+    },
+    {
+      "files": "packages/app-shell/**",
+      "options": { "tailwindStylesheet": "apps/user/src/styles/globals.css" }
     }
   ]
 }

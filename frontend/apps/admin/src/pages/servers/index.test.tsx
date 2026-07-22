@@ -155,7 +155,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => createTestTranslation((zhCnLabels ??= flattenTranslations(zhCN))),
 }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     success: mocks.toastSuccess,
     error: mocks.toastError,

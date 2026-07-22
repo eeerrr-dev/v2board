@@ -11,7 +11,7 @@ import {
 import { apiClient } from '@/lib/api';
 import { getAdminSecurePath } from '@/lib/runtime-config';
 import { cn } from '@v2board/ui/cn';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { PageHeader, PageShell } from '@v2board/ui/page';
 import { ErrorState } from '@v2board/ui/error-state';
 import { LoadingState, SkeletonFields } from '@v2board/ui/loading-state';

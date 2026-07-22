@@ -238,14 +238,14 @@ MySQL import 的旧机与新 PostgreSQL target 还必须位于同一机房，其
 1. 操作者停止旧 API、worker、scheduler、支付入口和远端节点报告者；
 2. 从 Oracle MySQL 8 导出全部业务表和行，记录 dump SHA-256 并作为受保护备份保留，旧数据库保持不变；
 3. 在停写后的旧生产机通过专用 `SELECT`-only 账号建立原 MySQL 的 read-only consistent snapshot；
-4. MySQL driver 为每张表执行一条主键有序的 streaming `SELECT`；内存有明确上限：当前 decoded row、
-   byte-bounded COPY send buffer，以及最多 4096 项的 payment-id 分类索引。converter 显式验证、
-   转换并累计 source-derived canonical expectation，再经同机房私网让每张 target 表各自接受一条
-   PostgreSQL `COPY FROM STDIN`；套餐源流固定同时生成基础表和规范化周期价格表，礼品卡源流
-   固定同时生成基础表和兑换关系表；MySQL dump SQL 不会交给 PostgreSQL，也不生成中间 COPY/CSV 文件；
+4. MySQL driver 为每张表执行一条主键有序的 streaming `SELECT`，内存有明确上限，再经同机房私网让
+   每张 target 表各自接受一条 PostgreSQL `COPY FROM STDIN`；套餐源流固定同时生成基础表和规范化
+   周期价格表，礼品卡源流固定同时生成基础表和兑换关系表；MySQL dump SQL 不会交给 PostgreSQL，
+   也不生成中间 COPY/CSV 文件；
 5. 所有保留表 COPY 完成后统一创建业务唯一约束、二级索引和外键，reset sequence、执行 `ANALYZE`，再按
    主键顺序对每张保留 target 表做且只做一次整表 canonical scan，并与 expectation 对比；
-6. ClickHouse 从空 native event history 开始；新 Redis 8.8 使用专用 `/0`、整个 instance 从空状态
+6. ClickHouse 使用全新专用 instance；清单指定的 target database 和 principals 在执行前必须
+   不存在（因此没有旧事件）；新 Redis 8.8 使用专用 `/0`、整个 instance 从空状态
    开始，并由一次性 bootstrap user 建立、保存、重载及实测 API/worker ACL；
 7. 从 `target` 和 `runtime` 在旧机不存在的 `config_output_directory` 生成
    API/worker 两份 `file_only + boot_only` 配置和导入报告；
@@ -257,9 +257,9 @@ PostgreSQL/ClickHouse/Redis target 和配置输出目录，修正问题，保持
 向新的空 target 完整运行一次；不保存中间状态，也不引入 rollback、resume、recovery、
 checkpoint、在线迁移或新旧双写。
 
-有界 MySQL buffer 只是流量控制，不得实现为 PostgreSQL 1000 行 `INSERT` batch。导入写入没有批量
-`INSERT` fallback、逐 chunk/batch target 对账、可选传输模式或第二套方案；每表 COPY 后的单次
-PK-ordered 整表 canonical scan 是唯一 target 内容校验。
+第 4 步的内存上限（当前 decoded row、byte-bounded COPY send buffer、最多 4096 项的 payment-id
+分类索引）、批量写入边界和逐表 canonical scan 的完整定义见
+[MySQL 一次性导入不可变契约](mysql-import-invariants.md) 第 1 节，本文不重复维护这些数字。
 
 表名边界固定为：旧 MySQL source 使用数据库中真实的 `v2_*` 名称；新 PostgreSQL/ClickHouse target
 不带该前缀，用户与订单 target 分别使用 `users`、`orders` 避免 PostgreSQL 关键字。没有 prefixed

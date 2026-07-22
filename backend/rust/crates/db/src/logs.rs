@@ -2,11 +2,12 @@ use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use v2board_application::{
     RepositoryError,
     logs::{
-        AuditLog, AuditLogField, AuditLogFilter, AuditLogQuery, LogRepository, RepositoryResult,
-        SortDirection, SystemLog, SystemLogQuery, SystemLogSort, TextPredicate,
-        escape_like_pattern,
+        AuditLog, AuditLogField, AuditLogQuery, LogRepository, RepositoryResult, SortDirection,
+        SystemLog, SystemLogField, SystemLogQuery, SystemLogSort,
     },
 };
+
+use crate::filter_dsl::push_filters;
 
 #[derive(Clone, Debug)]
 pub struct PostgresLogRepository {
@@ -21,47 +22,6 @@ impl PostgresLogRepository {
 
 fn repository_error(operation: &'static str, error: impl std::fmt::Display) -> RepositoryError {
     RepositoryError::new(operation, error)
-}
-
-fn push_text_predicate(
-    builder: &mut QueryBuilder<Postgres>,
-    expression: &'static str,
-    predicate: &TextPredicate,
-) {
-    builder.push(" AND ");
-    match predicate {
-        TextPredicate::IsNull => {
-            builder.push(expression).push(" IS NULL");
-        }
-        TextPredicate::IsNotNull => {
-            builder.push(expression).push(" IS NOT NULL");
-        }
-        TextPredicate::Equal(value) => {
-            builder
-                .push(expression)
-                .push(" = ")
-                .push_bind(value.clone());
-        }
-        TextPredicate::NotEqual(value) => {
-            builder
-                .push(expression)
-                .push(" <> ")
-                .push_bind(value.clone());
-        }
-        TextPredicate::Contains(value) => {
-            builder
-                .push(expression)
-                .push(" ILIKE ")
-                .push_bind(escape_like_pattern(value));
-        }
-        TextPredicate::In(values) => {
-            builder
-                .push(expression)
-                .push(" = ANY(")
-                .push_bind(values.clone())
-                .push(")");
-        }
-    }
 }
 
 #[derive(FromRow)]
@@ -94,12 +54,24 @@ struct AuditLogRow {
     created_at: i64,
 }
 
+const fn system_log_field_expression(field: SystemLogField) -> &'static str {
+    match field {
+        SystemLogField::Level => "level",
+    }
+}
+
+const fn audit_log_field_expression(field: AuditLogField) -> &'static str {
+    match field {
+        AuditLogField::Surface => "surface",
+        AuditLogField::ActorEmail => "actor_email",
+        AuditLogField::Method => "method",
+    }
+}
+
 impl LogRepository for PostgresLogRepository {
     async fn system_logs(&self, query: SystemLogQuery) -> RepositoryResult<(Vec<SystemLog>, i64)> {
         let mut count = QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM system_log WHERE 1=1");
-        for predicate in &query.level {
-            push_text_predicate(&mut count, "level", predicate);
-        }
+        push_filters(&mut count, &query.level, system_log_field_expression);
         let total = count
             .build_query_scalar()
             .fetch_one(&self.pool)
@@ -110,9 +82,7 @@ impl LogRepository for PostgresLogRepository {
             "SELECT id, title, level, host, uri, method, data, ip, context, created_at, updated_at \
              FROM system_log WHERE 1=1",
         );
-        for predicate in &query.level {
-            push_text_predicate(&mut rows, "level", predicate);
-        }
+        push_filters(&mut rows, &query.level, system_log_field_expression);
         let sort = match query.sort {
             SystemLogSort::CreatedAt => "created_at",
             SystemLogSort::Level => "level",
@@ -150,14 +120,7 @@ impl LogRepository for PostgresLogRepository {
 
     async fn audit_logs(&self, query: AuditLogQuery) -> RepositoryResult<(Vec<AuditLog>, i64)> {
         let mut count = QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM audit_log WHERE 1=1");
-        for filter in &query.filters {
-            let expression = match filter.field {
-                AuditLogField::Surface => "surface",
-                AuditLogField::ActorEmail => "actor_email",
-                AuditLogField::Method => "method",
-            };
-            push_text_predicate(&mut count, expression, &filter.predicate);
-        }
+        push_filters(&mut count, &query.filters, audit_log_field_expression);
         let total = count
             .build_query_scalar()
             .fetch_one(&self.pool)
@@ -168,14 +131,7 @@ impl LogRepository for PostgresLogRepository {
             "SELECT id, actor_id, actor_email, session_id, surface, method, path, status_code, \
                     client_ip, request_id, created_at FROM audit_log WHERE 1=1",
         );
-        for AuditLogFilter { field, predicate } in &query.filters {
-            let expression = match field {
-                AuditLogField::Surface => "surface",
-                AuditLogField::ActorEmail => "actor_email",
-                AuditLogField::Method => "method",
-            };
-            push_text_predicate(&mut rows, expression, predicate);
-        }
+        push_filters(&mut rows, &query.filters, audit_log_field_expression);
         let direction = match query.direction {
             SortDirection::Ascending => "ASC NULLS FIRST",
             SortDirection::Descending => "DESC NULLS LAST",

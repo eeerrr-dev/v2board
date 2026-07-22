@@ -8,11 +8,11 @@ import { applyLegacyHashRedirect } from '@v2board/config';
 import { RouterProvider } from 'react-router/dom';
 
 import { createUserRouter } from './App';
-import { AppShellBoundary } from './components/app-shell-boundary';
+import { AppShellBoundary } from '@v2board/app-shell/app-shell-boundary';
 import { ConfirmDialogProvider } from '@v2board/ui/confirm-dialog';
 import { Toaster } from '@v2board/ui/toaster';
 import { registerSessionCacheClearer, setupAuthSync } from './lib/auth';
-import { installChunkReloadRecovery } from './lib/chunk-recovery';
+import { installChunkReloadRecovery } from '@v2board/app-shell/chunk-recovery';
 import { applyInitialDarkMode, useDarkMode } from './lib/dark-mode';
 import {
   applyRuntimeConfig,
@@ -21,7 +21,7 @@ import {
 } from './lib/runtime-config';
 import { i18nGet } from './lib/errors';
 import { registerRouterNavigation } from './lib/router-navigation';
-import { toast } from './lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import './styles/globals.css';
 
 applyRuntimeConfig();
@@ -32,7 +32,7 @@ installChunkReloadRecovery();
 // lazily so boot never blocks on it and the chunk is never fetched when off.
 const sentryDsn = getSentryDsn();
 if (sentryDsn) {
-  void import('./lib/sentry').then(({ initSentry }) => initSentry(sentryDsn));
+  void import('@v2board/app-shell/sentry').then(({ initSentry }) => initSentry(sentryDsn));
 }
 const i18n = await createLazyI18n();
 installLocaleDocumentEnvironment(i18n);
@@ -84,7 +84,7 @@ function AppToaster() {
 
 createRoot(root).render(
   <StrictMode>
-    <AppShellBoundary>
+    <AppShellBoundary getSentryDsn={getSentryDsn}>
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />

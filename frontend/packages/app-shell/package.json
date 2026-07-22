@@ -1,0 +1,41 @@
+{
+  "name": "@v2board/app-shell",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./app-shell-boundary": "./src/app-shell-boundary.tsx",
+    "./chunk-recovery": "./src/chunk-recovery.ts",
+    "./error-reporting": "./src/error-reporting.ts",
+    "./sentry": "./src/sentry.ts",
+    "./toast": "./src/toast.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sentry/react": "catalog:",
+    "@v2board/ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "catalog:",
+    "@typescript/native": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "happy-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

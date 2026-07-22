@@ -8,6 +8,7 @@ pub mod audit;
 pub mod auth;
 pub mod content;
 pub mod coupon;
+pub mod filter_dsl;
 pub mod giftcard;
 pub mod invite;
 pub mod logs;

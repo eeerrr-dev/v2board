@@ -267,7 +267,7 @@ vi.mock('@v2board/config/clipboard', () => ({
   copyText: mocks.copyText,
 }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     success: mocks.toastSuccess,
   },

@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::ticket::{
     DurableMailDelivery, NewTicket, OperatorTicketListQuery, OperatorTicketOrder,
     OperatorTicketReply, OperatorTicketReplyOutcome, TicketCreateOutcome, TicketRepository,
@@ -9,12 +9,12 @@ use v2board_domain_model::TicketLevel;
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn ticket_state_and_notification_outbox_share_the_postgres_port() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn ticket_state_and_notification_outbox_share_the_postgres_port(pool: PgPool) {
     let repository = PostgresTicketRepository::new(pool.clone());
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let user_id = insert_user(&pool, &format!("ticket-user-{marker}@example.test")).await;
@@ -144,17 +144,4 @@ async fn insert_user(pool: &PgPool, email: &str) -> i64 {
     .fetch_one(pool)
     .await
     .expect("insert ticket test user")
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline");
-    pool
 }

@@ -2,6 +2,12 @@
 
 状态：**首个 native 版本发布前，`mysql-import.v1` 是已实现的唯一旧数据导入路径。**
 
+本文是导入契约中所有精确数字与前置条件（例如第 1 节的 4096 项 payment-id
+分类索引上限、第 2 节 ClickHouse/PostgreSQL target 的"执行前必须不存在"规则）
+唯一的权威来源。README.md、AGENTS.md 及其他文档只做简述并链接回本文；
+如需修改这些数字或前置条件，只改本文，其余文档不得各自复述完整定义。
+`make mysql-import-doc-audit` 会校验这些数字和关键短语在各文档间保持一致。
+
 新版尚未发布，也没有任何已经安装的 native 数据库需要兼容。当前 PostgreSQL、
 ClickHouse schema、导入清单和导入代码都是首发前基线，可以直接整理、合并或重写；
 不得为了本地提交历史增加兼容 migration、旧 schema 分支或升级桥接。

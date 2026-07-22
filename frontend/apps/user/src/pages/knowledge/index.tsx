@@ -16,7 +16,7 @@ import { cn } from '@v2board/ui/cn';
 import { getRequestLocale } from '@/lib/api';
 import { formatBackendDateSlash } from '@v2board/config/format';
 import { copyText } from '@v2board/config/clipboard';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import {
   BACKEND_MARKDOWN_ACTION_ATTRIBUTE,
   BACKEND_MARKDOWN_VALUE_ATTRIBUTE,

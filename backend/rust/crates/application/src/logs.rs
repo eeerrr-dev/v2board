@@ -1,18 +1,13 @@
-//! Operator system/audit log query ports with a closed filter vocabulary.
+//! Operator system/audit log query ports with a closed filter vocabulary,
+//! built on the shared table-driven admin filter DSL (`crate::filter_dsl`,
+//! docs/api-dialect.md §7.1).
 
-use crate::RepositoryError;
+use crate::{
+    RepositoryError,
+    filter_dsl::{ColumnKind, FilterClause, FilterField},
+};
 
 pub type RepositoryResult<T> = Result<T, RepositoryError>;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TextPredicate {
-    IsNull,
-    IsNotNull,
-    Equal(String),
-    NotEqual(String),
-    Contains(String),
-    In(Vec<String>),
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SortDirection {
@@ -26,6 +21,28 @@ pub enum SystemLogSort {
     Level,
 }
 
+/// `system/logs` (§6.1) filters only its one column: `level`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemLogField {
+    Level,
+}
+
+impl FilterField for SystemLogField {
+    fn parse(name: &str) -> Option<Self> {
+        (name == "level").then_some(Self::Level)
+    }
+
+    fn name(self) -> &'static str {
+        "level"
+    }
+
+    fn kind(self) -> ColumnKind {
+        ColumnKind::Text
+    }
+}
+
+pub type SystemLogFilterClause = FilterClause<SystemLogField>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditLogField {
     Surface,
@@ -33,15 +50,34 @@ pub enum AuditLogField {
     Method,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AuditLogFilter {
-    pub field: AuditLogField,
-    pub predicate: TextPredicate,
+impl FilterField for AuditLogField {
+    fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "surface" => Self::Surface,
+            "actor_email" => Self::ActorEmail,
+            "method" => Self::Method,
+            _ => return None,
+        })
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Surface => "surface",
+            Self::ActorEmail => "actor_email",
+            Self::Method => "method",
+        }
+    }
+
+    fn kind(self) -> ColumnKind {
+        ColumnKind::Text
+    }
 }
+
+pub type AuditLogFilterClause = FilterClause<AuditLogField>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SystemLogQuery {
-    pub level: Vec<TextPredicate>,
+    pub level: Vec<SystemLogFilterClause>,
     pub sort: SystemLogSort,
     pub direction: SortDirection,
     pub limit: i64,
@@ -50,7 +86,7 @@ pub struct SystemLogQuery {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuditLogQuery {
-    pub filters: Vec<AuditLogFilter>,
+    pub filters: Vec<AuditLogFilterClause>,
     pub direction: SortDirection,
     pub limit: i64,
     pub offset: i64,
@@ -117,23 +153,20 @@ where
     }
 }
 
-pub fn escape_like_pattern(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len() + 2);
-    for character in value.chars() {
-        if matches!(character, '%' | '_' | '\\') {
-            escaped.push('\\');
-        }
-        escaped.push(character);
-    }
-    format!("%{escaped}%")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn like_literals_escape_every_sql_wildcard() {
-        assert_eq!(escape_like_pattern("50%_a\\b"), "%50\\%\\_a\\\\b%");
+    fn field_vocabularies_are_closed_to_their_text_columns() {
+        assert_eq!(SystemLogField::parse("level"), Some(SystemLogField::Level));
+        assert_eq!(SystemLogField::parse("other"), None);
+        assert_eq!(SystemLogField::Level.kind(), ColumnKind::Text);
+        assert_eq!(
+            AuditLogField::parse("surface"),
+            Some(AuditLogField::Surface)
+        );
+        assert_eq!(AuditLogField::parse("raw_sql"), None);
+        assert_eq!(AuditLogField::ActorEmail.name(), "actor_email");
     }
 }

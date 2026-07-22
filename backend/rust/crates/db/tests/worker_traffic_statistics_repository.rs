@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use uuid::Uuid;
 use v2board_analytics::{
     AnalyticsAdmissionPolicy, install_analytics_admission_policy, refresh_analytics_admission,
@@ -15,11 +15,12 @@ use v2board_db::{
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn traffic_accounting_and_daily_statistics_are_real_postgres_ports() {
-    let Some(pool) = integration_pool().await else {
-        return;
-    };
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn traffic_accounting_and_daily_statistics_are_real_postgres_ports(pool: PgPool) {
     let installation_id = install_analytics_admission(&pool).await;
     let now = Utc::now().timestamp();
     let marker = Uuid::new_v4().simple().to_string();
@@ -158,19 +159,6 @@ async fn traffic_accounting_and_daily_statistics_are_real_postgres_ports() {
             .await
             .expect("verify failed report analytics rollback");
     assert_eq!(rolled_back_events, 0);
-
-    cleanup_fixture(
-        &pool,
-        &report_key,
-        &rollback_key,
-        &paid_trade,
-        &unpaid_trade,
-        server_id,
-        now - 10,
-        user_id,
-        inviter_id,
-    )
-    .await;
 }
 
 async fn insert_user(pool: &PgPool, label: &str, inviter_id: Option<i64>, now: i64) -> i64 {
@@ -238,59 +226,6 @@ async fn assert_report_committed(pool: &PgPool, report_key: &str) {
     assert_eq!((state.1, state.2), (0, 1));
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn cleanup_fixture(
-    pool: &PgPool,
-    report_key: &str,
-    rollback_key: &str,
-    paid_trade: &str,
-    unpaid_trade: &str,
-    server_id: i32,
-    statistic_record_at: i64,
-    user_id: i64,
-    inviter_id: i64,
-) {
-    sqlx::query("DELETE FROM analytics_outbox WHERE report_key IN ($1, $2)")
-        .bind(report_key)
-        .bind(rollback_key)
-        .execute(pool)
-        .await
-        .expect("clean worker analytics fixture");
-    sqlx::query("DELETE FROM server_traffic_report WHERE report_key IN ($1, $2)")
-        .bind(report_key)
-        .bind(rollback_key)
-        .execute(pool)
-        .await
-        .expect("clean durable traffic fixture");
-    sqlx::query("DELETE FROM stat WHERE record_at = $1")
-        .bind(statistic_record_at)
-        .execute(pool)
-        .await
-        .expect("clean statistic fixture");
-    sqlx::query("DELETE FROM server_traffic WHERE server_id = $1 AND server_type = 'integration'")
-        .bind(server_id)
-        .execute(pool)
-        .await
-        .expect("clean server-traffic fixture");
-    sqlx::query("DELETE FROM commission_log WHERE trade_no = $1")
-        .bind(paid_trade)
-        .execute(pool)
-        .await
-        .expect("clean commission fixture");
-    sqlx::query("DELETE FROM orders WHERE trade_no IN ($1, $2)")
-        .bind(paid_trade)
-        .bind(unpaid_trade)
-        .execute(pool)
-        .await
-        .expect("clean order fixtures");
-    sqlx::query("DELETE FROM users WHERE id IN ($1, $2)")
-        .bind(user_id)
-        .bind(inviter_id)
-        .execute(pool)
-        .await
-        .expect("clean user fixtures");
-}
-
 async fn install_analytics_admission(pool: &PgPool) -> Uuid {
     if let Some(installation_id) =
         sqlx::query_scalar("SELECT installation_id FROM system_installation WHERE singleton = 1")
@@ -342,18 +277,4 @@ async fn install_analytics_admission(pool: &PgPool) -> Uuid {
         .await
         .expect("refresh analytics admission state");
     installation_id
-}
-
-async fn integration_pool() -> Option<PgPool> {
-    let database_url = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL").ok()?;
-    let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .connect(&database_url)
-        .await
-        .expect("connect to disposable worker repository database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL migrations");
-    Some(pool)
 }

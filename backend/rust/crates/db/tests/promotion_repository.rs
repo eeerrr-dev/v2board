@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::task::JoinSet;
 use v2board_application::promotion::{
     CouponCreateInput, CouponPatchInput, GenerateCodeOutcome, GiftCardCreateInput,
@@ -9,12 +9,12 @@ use v2board_db::coupon::{decrement_coupon_use, find_coupon_for_update};
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
 
-#[tokio::test]
-async fn coupon_consumption_lock_and_atomic_decrement_allow_only_one_last_use() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so tests are safe to run in
+// parallel and no longer need hand-written DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn coupon_consumption_lock_and_atomic_decrement_allow_only_one_last_use(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let code = format!("LAST-{marker}");
     let coupon_id: i32 = sqlx::query_scalar(
@@ -59,19 +59,11 @@ async fn coupon_consumption_lock_and_atomic_decrement_allow_only_one_last_use() 
         .await
         .expect("load coupon after concurrent use");
     assert_eq!(remaining, 0);
-    sqlx::query("DELETE FROM coupon WHERE id = $1")
-        .bind(coupon_id)
-        .execute(&pool)
-        .await
-        .expect("clean last-use coupon fixture");
 }
 
-#[tokio::test]
-async fn promotion_use_cases_round_trip_through_the_postgres_port() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn promotion_use_cases_round_trip_through_the_postgres_port(pool: PgPool) {
     let marker = uuid::Uuid::new_v4().simple().to_string();
     let service = PromotionService::new(PostgresPromotionRepository::new(pool.clone()));
 
@@ -229,16 +221,6 @@ async fn promotion_use_cases_round_trip_through_the_postgres_port() {
         Err(PromotionError::GiftCardNotFound)
     ));
 
-    sqlx::query("DELETE FROM coupon WHERE name LIKE $1")
-        .bind(format!("{coupon_name}%"))
-        .execute(&pool)
-        .await
-        .expect("clean coupon fixtures");
-    sqlx::query("DELETE FROM gift_card WHERE name = $1")
-        .bind(gift_name)
-        .execute(&pool)
-        .await
-        .expect("clean gift-card fixtures");
     assert_ne!(duplicate_id, coupon_id);
 }
 
@@ -270,17 +252,4 @@ fn giftcard_input(name: &str, code: Option<String>) -> GiftCardCreateInput {
         code,
         generate_count: None,
     }
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline before the promotion regression");
-    pool
 }

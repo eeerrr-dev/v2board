@@ -259,7 +259,7 @@ vi.mock('@v2board/ui/confirm-dialog', () => ({
   confirmDialog: mocks.confirmDialog,
 }));
 
-vi.mock('@/lib/toast', () => ({
+vi.mock('@v2board/app-shell/toast', () => ({
   toast: {
     error: mocks.toastError,
     success: mocks.toastSuccess,

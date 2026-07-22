@@ -630,7 +630,7 @@ impl AppConfig {
             &file_config,
             "auth_session_ttl_seconds",
             "V2BOARD_AUTH_SESSION_TTL_SECONDS",
-            30 * 24 * 60 * 60,
+            7 * 24 * 60 * 60,
         )
         .clamp(60 * 60, 365 * 24 * 60 * 60) as u64;
         // Keep the built-in admin client usable without weakening the mutation

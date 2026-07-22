@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@hookform/resolvers": "catalog:",
-    "@sentry/react": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@v2board/api-client": "workspace:*",
+    "@v2board/app-shell": "workspace:*",
     "@v2board/config": "workspace:*",
     "@v2board/i18n": "workspace:*",
     "@v2board/types": "workspace:*",

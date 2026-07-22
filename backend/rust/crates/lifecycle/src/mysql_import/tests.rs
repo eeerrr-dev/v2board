@@ -649,6 +649,7 @@ async fn run_full_execute_test(
 }
 
 #[tokio::test]
+#[ignore = "requires RUST_INTEGRATION_* env vars, run via the dedicated integration CI job"]
 async fn full_execute_bootstraps_and_retires_every_principal() {
     let Some(postgres_root_url) = std::env::var("RUST_INTEGRATION_EXECUTE_DATABASE_ROOT_URL").ok()
     else {
@@ -699,6 +700,7 @@ async fn full_execute_bootstraps_and_retires_every_principal() {
 }
 
 #[tokio::test]
+#[ignore = "requires RUST_INTEGRATION_* env vars, run via the dedicated integration CI job"]
 async fn imported_source_schema_matches_oracle_mysql_8_legacy_fixture() {
     let Ok(database_url) = std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL") else {
         return;
@@ -757,6 +759,7 @@ async fn imported_source_schema_matches_oracle_mysql_8_legacy_fixture() {
 }
 
 #[tokio::test]
+#[ignore = "requires RUST_INTEGRATION_* env vars, run via the dedicated integration CI job"]
 async fn representative_mysql_rows_copy_into_fresh_postgres() {
     let (Ok(mysql_url), Ok(mysql_fixture_admin_url), Ok(postgres_url)) = (
         std::env::var("RUST_INTEGRATION_LEGACY_MYSQL_URL"),

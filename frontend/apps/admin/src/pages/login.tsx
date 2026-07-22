@@ -24,7 +24,7 @@ import {
 } from '@v2board/ui/dialog';
 import { Field, FieldError, FieldLabel } from '@v2board/ui/field';
 import { Input } from '@v2board/ui/input';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 
 // Flat runtime message keys (FieldError resolves them through
 // translateRuntimeMessage); they must match the admin.auth fragment.

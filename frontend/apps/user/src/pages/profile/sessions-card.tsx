@@ -17,7 +17,7 @@ import {
   TableScroll,
 } from '@v2board/ui/table';
 import { useActiveSessions, useRemoveSessionMutation } from '@/lib/queries';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { SectionIcon } from './profile-ui';
 
 // Native responses identify the current opaque session explicitly. The UI does

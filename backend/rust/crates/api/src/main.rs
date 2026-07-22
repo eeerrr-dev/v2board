@@ -73,15 +73,21 @@ mod user;
 mod validation;
 
 use runtime::{
-    AppState, build_http_client, init_tracing, reset_admin_password, reset_admin_totp,
-    shutdown_signal,
+    AppState, build_http_client, reset_admin_password, reset_admin_totp, shutdown_signal,
 };
 
 fn main() -> anyhow::Result<()> {
     // Telemetry must initialize before the tokio runtime exists: the OTLP
     // batch exporter constructs a blocking HTTP client, which panics inside
     // an async context. The guard flushes both exports on drop.
-    let _telemetry = init_tracing();
+    let production =
+        v2board_config::RuntimeEnvironment::parse(std::env::var("V2BOARD_ENV").ok().as_deref())
+            .is_ok_and(v2board_config::RuntimeEnvironment::is_production);
+    let _telemetry = v2board_telemetry::init_tracing(
+        "v2board-api",
+        "v2board_api=info,tower_http=info",
+        production,
+    );
     run()
 }
 

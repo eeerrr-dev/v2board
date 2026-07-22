@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_db::plan::{SortPlansError, sort_plans_exact};
 
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations-postgres");
@@ -8,15 +8,13 @@ static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrat
 const GROUP_ID: i32 = 2_000_000_031;
 const PLAN_IDS: [i32; 3] = [2_000_000_031, 2_000_000_032, 2_000_000_033];
 
-#[tokio::test]
-async fn exact_sort_reorders_the_complete_set_and_rejects_inexact_sets_atomically() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    reset_fixture(&pool).await;
-
-    let original_ordering = read_ordering(&pool).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so "the complete plan set" this
+// test asserts over can no longer be perturbed by other tests, and the
+// fixture no longer needs hand-written DELETE cleanup or ordering restore.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn exact_sort_reorders_the_complete_set_and_rejects_inexact_sets_atomically(pool: PgPool) {
     insert_fixture(&pool).await;
 
     let populated_ordering = read_ordering(&pool).await;
@@ -76,22 +74,6 @@ async fn exact_sort_reorders_the_complete_set_and_rejects_inexact_sets_atomicall
         committed_ordering,
         "rejecting a duplicate id must not partially rewrite sort values"
     );
-
-    reset_fixture(&pool).await;
-    restore_ordering(&pool, &original_ordering).await;
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply the PostgreSQL baseline before the exact-sort regression");
-    pool
 }
 
 async fn insert_fixture(pool: &PgPool) {
@@ -152,33 +134,4 @@ fn assert_plan_set_changed(result: Result<(), SortPlansError>, input_kind: &str)
         matches!(&result, Err(SortPlansError::PlanSetChanged)),
         "an inexact {input_kind} must be rejected as PlanSetChanged, got {result:?}"
     );
-}
-
-async fn restore_ordering(pool: &PgPool, ordering: &BTreeMap<i32, Option<i32>>) {
-    let mut transaction = pool.begin().await.expect("begin ordering restoration");
-    for (id, sort) in ordering {
-        sqlx::query("UPDATE plan SET sort = $1 WHERE id = $2")
-            .bind(sort)
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .expect("restore a pre-existing plan sort value");
-    }
-    transaction
-        .commit()
-        .await
-        .expect("commit ordering restoration");
-}
-
-async fn reset_fixture(pool: &PgPool) {
-    sqlx::query("DELETE FROM plan WHERE id = ANY($1::integer[])")
-        .bind(PLAN_IDS.to_vec())
-        .execute(pool)
-        .await
-        .expect("remove exact-sort plan fixtures");
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(GROUP_ID)
-        .execute(pool)
-        .await
-        .expect("remove exact-sort server group fixture");
 }

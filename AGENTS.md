@@ -139,9 +139,11 @@ There is exactly one legacy-data path:
    through PostgreSQL `COPY FROM STDIN` over the same-datacenter private network
    into a brand-new dedicated PostgreSQL 18 cluster whose only initial
    non-template database is `postgres`;
-   ClickHouse starts with an empty native event history, and a brand-new
-   dedicated Redis 8.8 instance is empty across every logical database and uses
-   canonical database `/0` for native runtime state;
+   ClickHouse's manifest-specified target database and principals must not
+   already exist before `execute` runs (so it starts with an empty native
+   event history), and a brand-new dedicated Redis 8.8 instance is empty
+   across every logical database and uses canonical database `/0` for native
+   runtime state;
 5. on the old host, generate the new API and worker configuration files plus an
    import report in a new root-owned `config_output_directory`, then securely
    install the two configs at their fixed role-owned paths on the new host; and
@@ -157,7 +159,8 @@ gift-card stream deterministically feeds both its base target and derived
 redemption target. Memory is bounded to the
 current decoded row, byte-bounded COPY send buffers, and a hard-capped
 4,096-entry payment-id classification index required by the fixed Stripe order
-policy. These buffers are not
+policy (`docs/mysql-import-invariants.md` is the canonical source for this and
+the other exact numeric/byte bounds this section restates). These buffers are not
 PostgreSQL batches, and there is no fixed 1,000-row or other batched
 `INSERT` path. The converter never writes an intermediate COPY/CSV or other
 row-transfer file to either host. After every retained table has completed

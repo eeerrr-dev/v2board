@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useSendEmailVerifyMutation } from '@/lib/guest';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { useCountdown } from './use-countdown';
 
 interface SendEmailVerifyFlowOptions {

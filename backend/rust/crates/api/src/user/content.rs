@@ -3,7 +3,7 @@
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::HeaderMap,
 };
 use chrono::Utc;
@@ -19,6 +19,7 @@ use v2board_api_contract::{
 };
 use v2board_application::{
     ApplicationError,
+    auth::AuthUser,
     content::{
         KnowledgeArticle as ApplicationKnowledgeArticle,
         KnowledgeSummary as ApplicationKnowledgeSummary, KnowledgeTemplateContext,
@@ -29,7 +30,6 @@ use v2board_application::{
 use v2board_compat::{ApiError, Code, Pagination, Problem};
 
 use crate::{
-    auth::require_user,
     codec::{percent_encode, safe_base64_encode},
     dialect::problem_from,
     locale::request_locale,
@@ -77,9 +77,6 @@ pub(crate) async fn knowledge_list(
     headers: HeaderMap,
 ) -> Result<Json<KnowledgeGroups>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let language = query
         .language
         .unwrap_or_else(|| DEFAULT_KNOWLEDGE_LANGUAGE.to_string());
@@ -120,13 +117,11 @@ fn knowledge_detail_view(article: ApplicationKnowledgeArticle) -> KnowledgeDetai
 /// placeholder rendering. The adapter only supplies encoded link facts.
 pub(crate) async fn knowledge_detail(
     State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
     Path(id): Path<i32>,
     headers: HeaderMap,
 ) -> Result<Json<KnowledgeDetailView>, Problem> {
     let locale = request_locale(&headers);
-    let user = require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let prepared = state
         .content_service()
         .prepare_published_knowledge_detail(user.id, i64::from(id), Utc::now().timestamp())
@@ -158,9 +153,6 @@ pub(crate) async fn knowledge_categories(
     headers: HeaderMap,
 ) -> Result<Json<Vec<KnowledgeCategoryView>>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let language = query
         .language
         .as_deref()
@@ -183,9 +175,6 @@ pub(crate) async fn telegram_bot(
     headers: HeaderMap,
 ) -> Result<Json<TelegramBot>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let config = state.config_snapshot();
     let token = config
         .telegram_bot_token
@@ -233,9 +222,6 @@ pub(crate) async fn user_notices(
     headers: HeaderMap,
 ) -> Result<Json<Page<NoticeView>>, Problem> {
     let locale = request_locale(&headers);
-    require_user(&state, &headers)
-        .await
-        .map_err(|error| problem_from(error, locale))?;
     let pagination = Pagination::resolve(query.page, query.per_page, NOTICES_DEFAULT_PER_PAGE)?;
     let notices = state
         .content_service()

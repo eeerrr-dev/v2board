@@ -14,17 +14,10 @@ anyhow.workspace = true
 arc-swap.workspace = true
 chrono.workspace = true
 cron.workspace = true
-opentelemetry.workspace = true
-opentelemetry-otlp.workspace = true
-opentelemetry_sdk.workspace = true
 redis.workspace = true
-sentry.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tracing-opentelemetry.workspace = true
-tracing-subscriber.workspace = true
-url.workspace = true
 uuid.workspace = true
 v2board-analytics = { path = "../analytics" }
 v2board-application = { path = "../application" }
@@ -35,3 +28,4 @@ v2board-domain-model = { path = "../domain-model" }
 v2board-mail-adapters = { path = "../mail-adapters" }
 v2board-order-adapters = { path = "../order-adapters" }
 v2board-redis-adapters = { path = "../redis-adapters" }
+v2board-telemetry = { path = "../telemetry" }

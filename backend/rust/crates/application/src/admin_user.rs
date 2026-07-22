@@ -9,7 +9,20 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use v2board_domain_model::is_registered_permission;
 
-use crate::RepositoryError;
+use crate::{
+    RepositoryError,
+    filter_dsl::{self, FilterField},
+};
+
+/// Back-compat aliases: `admin_user` was the first consumer of the admin
+/// filter DSL, so its per-resource names stay put while the operator/value
+/// vocabulary and validity check move to the shared, table-driven engine in
+/// `crate::filter_dsl` (docs/api-dialect.md §7.1).
+pub use crate::filter_dsl::{
+    ColumnKind as UserColumnKind, FilterOperator as UserFilterOperator,
+    FilterValue as UserFilterValue,
+};
+pub type UserFilterClause = filter_dsl::FilterClause<UserFilterField>;
 
 const USER_BULK_MAX_ROWS: usize = 10_000;
 const USER_CSV_PAGE_SIZE: i64 = 500;
@@ -153,15 +166,6 @@ pub struct AdminUserPage {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UserColumnKind {
-    Boolean,
-    Email,
-    Integer,
-    Text,
-    Timestamp,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserFilterField {
     Id,
     Email,
@@ -274,34 +278,18 @@ impl UserFilterField {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UserFilterOperator {
-    Eq,
-    Neq,
-    Like,
-    Gt,
-    Gte,
-    Lt,
-    Lte,
-    In,
-}
+impl FilterField for UserFilterField {
+    fn parse(name: &str) -> Option<Self> {
+        Self::parse(name)
+    }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UserFilterValue {
-    Null,
-    Boolean(bool),
-    Integer(i64),
-    Text(String),
-    Booleans(Vec<bool>),
-    Integers(Vec<i64>),
-    Texts(Vec<String>),
-}
+    fn name(self) -> &'static str {
+        self.name()
+    }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UserFilterClause {
-    pub field: UserFilterField,
-    pub operator: UserFilterOperator,
-    pub value: UserFilterValue,
+    fn kind(self) -> UserColumnKind {
+        self.kind()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1211,75 +1199,17 @@ fn validate_list_request(request: &AdminUserListRequest) -> Result<(), AdminUser
     validate_filters(&request.filters)
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UserFilterViolation {
-    pub field: &'static str,
-    pub message: String,
-}
+pub type UserFilterViolation = filter_dsl::FilterViolation;
 
-/// Validates the closed user-query vocabulary before any SQL adapter sees it.
+/// Validates the closed user-query vocabulary before any SQL adapter sees
+/// it, via the shared table-driven engine (`crate::filter_dsl`).
 pub fn validate_user_filters(filters: &[UserFilterClause]) -> Result<(), UserFilterViolation> {
-    for filter in filters {
-        let field = filter.field.name();
-        let kind = filter.field.kind();
-        let valid = match filter.operator {
-            UserFilterOperator::Eq | UserFilterOperator::Neq => {
-                matches!(filter.value, UserFilterValue::Null) || scalar_matches(kind, &filter.value)
-            }
-            UserFilterOperator::Like => {
-                matches!(filter.value, UserFilterValue::Text(_))
-                    && matches!(
-                        kind,
-                        UserColumnKind::Text | UserColumnKind::Email | UserColumnKind::Integer
-                    )
-            }
-            UserFilterOperator::Gt
-            | UserFilterOperator::Gte
-            | UserFilterOperator::Lt
-            | UserFilterOperator::Lte => {
-                matches!(filter.value, UserFilterValue::Integer(_))
-                    && matches!(kind, UserColumnKind::Integer | UserColumnKind::Timestamp)
-            }
-            UserFilterOperator::In => match (&filter.value, kind) {
-                (
-                    UserFilterValue::Integers(values),
-                    UserColumnKind::Integer | UserColumnKind::Timestamp,
-                ) => !values.is_empty(),
-                (UserFilterValue::Booleans(values), UserColumnKind::Boolean) => !values.is_empty(),
-                (UserFilterValue::Texts(values), UserColumnKind::Text | UserColumnKind::Email) => {
-                    !values.is_empty()
-                }
-                _ => false,
-            },
-        };
-        if !valid {
-            return Err(UserFilterViolation {
-                field: "filter",
-                message: format!("operator/value combination is invalid for {field}"),
-            });
-        }
-    }
-    Ok(())
+    filter_dsl::validate_filters(filters)
 }
 
 fn validate_filters(filters: &[UserFilterClause]) -> Result<(), AdminUserError> {
     validate_user_filters(filters)
         .map_err(|violation| AdminUserError::validation(violation.field, violation.message))
-}
-
-fn scalar_matches(kind: UserColumnKind, value: &UserFilterValue) -> bool {
-    matches!(
-        (kind, value),
-        (UserColumnKind::Boolean, UserFilterValue::Boolean(_))
-            | (
-                UserColumnKind::Integer | UserColumnKind::Timestamp,
-                UserFilterValue::Integer(_)
-            )
-            | (
-                UserColumnKind::Text | UserColumnKind::Email,
-                UserFilterValue::Text(_)
-            )
-    )
 }
 
 fn validate_admin_patch(input: &AdminUserPatchInput) -> Result<(), AdminUserError> {

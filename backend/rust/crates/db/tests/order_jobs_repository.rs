@@ -1,4 +1,4 @@
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use v2board_application::{
     order::{OrderRepository, PaymentMethod, PaymentSnapshotVerifier, PortResult},
     order_jobs::{CommissionRun, CommissionService, RenewalCalendar, RenewalRun, RenewalService},
@@ -43,13 +43,13 @@ impl v2board_application::order::OrderNumberGenerator for FixedNumbers {
     }
 }
 
-#[tokio::test]
-async fn postgres_order_catalog_commission_and_renewal_ports_preserve_transactions() {
-    let Ok(database_url) = std::env::var("RUST_INTEGRATION_SCHEMA_DATABASE_URL") else {
-        return;
-    };
-    let pool = integration_pool(&database_url).await;
-    cleanup(&pool).await;
+// Each test runs against its own throwaway database (sqlx::test creates,
+// migrates, and drops it automatically), so the fixed fixture ids below can
+// no longer collide across tests or files and no longer need hand-written
+// DELETE cleanup.
+#[sqlx::test(migrator = "POSTGRES_MIGRATOR")]
+#[ignore = "requires DATABASE_URL; run via `make rust-integration`"]
+async fn postgres_order_catalog_commission_and_renewal_ports_preserve_transactions(pool: PgPool) {
     seed(&pool).await;
 
     let order_repository = PostgresOrderRepository::new(pool.clone(), EquivalentPayment);
@@ -140,21 +140,6 @@ async fn postgres_order_catalog_commission_and_renewal_ports_preserve_transactio
     .await
     .expect("read committed renewal order");
     assert_eq!(renewal_order, (2, "month_price".to_string(), 500, 3));
-
-    cleanup(&pool).await;
-}
-
-async fn integration_pool(database_url: &str) -> PgPool {
-    let pool = PgPoolOptions::new()
-        .max_connections(4)
-        .connect(database_url)
-        .await
-        .expect("connect to the disposable PostgreSQL schema-test database");
-    POSTGRES_MIGRATOR
-        .run(&pool)
-        .await
-        .expect("apply PostgreSQL migrations before the order-jobs adapter test");
-    pool
 }
 
 async fn seed(pool: &PgPool) {
@@ -286,34 +271,4 @@ async fn insert_user(
     .execute(pool)
     .await
     .expect("insert order-jobs user");
-}
-
-async fn cleanup(pool: &PgPool) {
-    sqlx::query("DELETE FROM commission_log WHERE trade_no LIKE 'order-jobs-%'")
-        .execute(pool)
-        .await
-        .expect("remove order-jobs commission logs");
-    sqlx::query("DELETE FROM orders WHERE trade_no LIKE 'order-jobs-%'")
-        .execute(pool)
-        .await
-        .expect("remove order-jobs orders");
-    sqlx::query("DELETE FROM users WHERE id = ANY($1::bigint[])")
-        .bind(vec![INVITER_ID, BUYER_ID, RENEWAL_ID, PENDING_ID])
-        .execute(pool)
-        .await
-        .expect("remove order-jobs users");
-    sqlx::query("DELETE FROM payment_method WHERE uuid = 'order-jobs-payment'")
-        .execute(pool)
-        .await
-        .expect("remove order-jobs payment method");
-    sqlx::query("DELETE FROM plan WHERE id = $1")
-        .bind(PLAN_ID)
-        .execute(pool)
-        .await
-        .expect("remove order-jobs plan");
-    sqlx::query("DELETE FROM server_group WHERE id = $1")
-        .bind(GROUP_ID)
-        .execute(pool)
-        .await
-        .expect("remove order-jobs server group");
 }

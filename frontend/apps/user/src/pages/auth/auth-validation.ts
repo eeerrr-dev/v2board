@@ -87,7 +87,7 @@ export type RegisterFormValues = z.output<ReturnType<typeof createRegisterSchema
 
 export const forgetSchema = z
   .object({
-    email: emailInput.max(64, AUTH_VALIDATION.email).pipe(emailAddress),
+    email: emailInput.max(254, AUTH_VALIDATION.email).pipe(emailAddress),
     email_code: emailCode,
     password: password.refine((value) => characterCount(value) <= 64, AUTH_VALIDATION.password),
     confirm_password: confirmPassword.refine(

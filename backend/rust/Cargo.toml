@@ -21,6 +21,7 @@ members = [
   "crates/lifecycle",
   "crates/mail-adapters",
   "crates/provision",
+  "crates/telemetry",
   "crates/workers",
 ]
 resolver = "3"
@@ -100,7 +101,7 @@ syn = { version = "2.0.117", features = ["full", "visit"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal", "net", "time", "sync", "fs"] }
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
-tower-http = { version = "0.7.0", features = ["compression-br", "compression-gzip", "cors", "fs", "limit", "request-id", "sensitive-headers", "timeout", "trace"] }
+tower-http = { version = "0.7.0", features = ["catch-panic", "compression-br", "compression-gzip", "cors", "fs", "limit", "request-id", "sensitive-headers", "timeout", "trace"] }
 tracing-opentelemetry = { version = "0.33.0", default-features = false }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }

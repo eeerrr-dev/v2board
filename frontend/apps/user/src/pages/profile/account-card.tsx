@@ -6,7 +6,7 @@ import { Button } from '@v2board/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@v2board/ui/card';
 import { useUserInfo } from '@/lib/queries';
 import { copyText } from '@v2board/config/clipboard';
-import { toast } from '@/lib/toast';
+import { toast } from '@v2board/app-shell/toast';
 import { SectionIcon } from './profile-ui';
 
 export function AccountCard() {
