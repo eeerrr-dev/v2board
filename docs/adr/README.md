@@ -25,3 +25,4 @@
 | [0005](0005-one-shot-mysql-import-copy-stream.md) | 一次性 MySQL 导入:只读快照 + COPY 流式,失败即弃重来 | 已采纳(回填) |
 | [0006](0006-frontend-contract-tiers-interaction-parity.md) | 前端行为契约分层(Tier-1/Tier-2),像素对比退役,交互 parity 常设 | 已采纳(回填) |
 | [0007](0007-payment-config-aes-gcm-envelope.md) | 支付网关配置静态加密:AES-256-GCM 信封与确定性 nonce | 已采纳(回填) |
+| [0009](0009-hand-written-openapi-codegen-vs-off-the-shelf.md) | 维持自研 OpenAPI→TypeScript+Zod 生成器,否决现成工具替换 | 已采纳 |
