@@ -187,13 +187,21 @@ api-contract-generate:
 		-v "$(API_CONTRACT_OPENAPI_HOST_DIR):/contract-openapi" \
 		rust-api -lc \
 		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
-	$(FRONTEND_RUN) -v "$(CURDIR)/frontend:/contract-frontend" frontend -lc \
-		'node /contract-frontend/scripts/generate-internal-api-contract.mjs --root=/contract-frontend && \
-		 cd /contract-frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
+	$(FRONTEND_RUN) \
+		-v "$(CURDIR)/frontend/packages/types/src/generated:/app/frontend/packages/types/src/generated" \
+		-v "$(CURDIR)/frontend/packages/api-client/src/generated:/app/frontend/packages/api-client/src/generated" \
+		frontend -lc \
+		'$(FRONTEND_SETUP) && node /app/frontend/scripts/generate-internal-api-contract.mjs --root=/app/frontend && \
+		 cd /app/frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
 
 # Drift gate: Rust must reproduce the committed OpenAPI byte-for-byte, then
 # the frontend generator must reproduce both its compile-time and runtime
-# bindings from that exact document.
+# bindings from that exact document. The generator now depends on
+# @hey-api/openapi-ts, an installed package, so it runs against the synced
+# /app/frontend workspace (with node_modules) rather than the raw read-only
+# /src/frontend host mirror; run `make sync` after host edits so this gate
+# reads current source (see api-contract-check's own committed output for the
+# generator's own drift check on itself).
 api-contract-check:
 	$(DCF) build rust-api frontend-build
 	$(DCF) run --rm -T --no-deps --entrypoint bash \
@@ -201,8 +209,8 @@ api-contract-check:
 		rust-api -lc \
 		'. /usr/local/cargo/env; cargo run --locked -q -p v2board-api-contract --bin v2board-export-openapi -- --check /contract-openapi/$(API_CONTRACT_OPENAPI_FILE)'
 	$(FRONTEND_RUN) frontend -lc \
-		'node /src/frontend/scripts/generate-internal-api-contract.mjs --root=/src/frontend --check && \
-		 cd /src/frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
+		'$(FRONTEND_SETUP) && node /app/frontend/scripts/generate-internal-api-contract.mjs --root=/app/frontend --check && \
+		 cd /app/frontend && node --test scripts/internal-api-contract-coverage.test.mjs'
 
 rust-integration:
 	$(DCF) build rust-api

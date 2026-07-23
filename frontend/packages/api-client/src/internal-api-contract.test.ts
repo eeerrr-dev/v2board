@@ -27,6 +27,18 @@ describe('generated internal API contract', () => {
     const missingContent = { ...(plan as Record<string, unknown>) };
     delete missingContent.content;
     expect(internalApiAdminPlanItemSchema.safeParse(missingContent).success).toBe(false);
+
+    // Closed component objects (`additionalProperties: false` with named
+    // properties) must reject unknown keys via hey-api's `.strict()` — the
+    // hey-api-generated TypeScript type promises exactly this set of
+    // properties, and a silently-dropped-then-accepted extra key would
+    // disagree with it.
+    expect(
+      internalApiAdminPlanItemSchema.safeParse({
+        ...(plan as Record<string, unknown>),
+        unexpected_extra_field: 'should be rejected',
+      }).success,
+    ).toBe(false);
   });
 
   it('keeps operation metadata, request validation, and path expansion together', () => {

@@ -297,20 +297,27 @@ test('every object schema is explicitly closed or belongs to the reviewed open-m
 });
 
 test('generated permissive types and catchalls stay confined to explicit extension islands', async () => {
-  const types = await readFile('packages/types/src/generated/internal-api.ts', 'utf8');
-  const unknownIndexOwners = types
-    .split('\n')
-    .filter((line) => line.includes('[key: string]: unknown'))
-    .map((line) => line.match(/^export type (InternalApi\w+) =/)?.[1]);
-  assert.deepEqual(unknownIndexOwners, ['InternalApiProblemDetails']);
+  // Component-schema types/validators are compiled by @hey-api/openapi-ts
+  // (packages/types/src/generated/hey-api); packages/types/src/generated and
+  // packages/api-client/src/generated only alias its output, so the compiled
+  // shapes below live in the hey-api output, not the alias files.
+  const types = await readFile('packages/types/src/generated/hey-api/types.gen.ts', 'utf8');
+  const unknownIndexOwners = new Set();
+  let currentTopLevelType;
+  for (const line of types.split('\n')) {
+    const declaration = line.match(/^export (?:type|interface) (\w+)/);
+    if (declaration) currentTopLevelType = declaration[1];
+    if (line.includes('[key: string]: unknown')) unknownIndexOwners.add(currentTopLevelType);
+  }
+  assert.deepEqual([...unknownIndexOwners], ['ProblemDetails']);
   assert.doesNotMatch(
     types,
-    /InternalApiJsonValue|Record<string, unknown>/,
+    /\bJsonValue\b|Record<string, unknown>/,
     'business DTOs must not expose a recursive arbitrary-JSON or unknown-valued map',
   );
 
-  const runtime = await readFile('packages/api-client/src/generated/internal-api.ts', 'utf8');
-  const problemStart = runtime.indexOf('export const internalApiProblemDetailsSchema');
+  const runtime = await readFile('packages/types/src/generated/hey-api/zod.gen.ts', 'utf8');
+  const problemStart = runtime.indexOf('export const zProblemDetails');
   assert.notEqual(problemStart, -1, 'the generated RFC 9457 schema is missing');
   const problemEnd = runtime.indexOf('\nexport const ', problemStart + 1);
   const runtimeWithoutProblem =

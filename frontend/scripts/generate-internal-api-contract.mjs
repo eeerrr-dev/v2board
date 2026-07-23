@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { createClient } from '@hey-api/openapi-ts';
+import { readFile, mkdir, writeFile, rm, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -10,6 +12,7 @@ const root = path.resolve(rootArgument?.slice('--root='.length) ?? process.cwd()
 const specPath = path.join(root, 'packages/api-client/openapi/internal-api.openapi.json');
 const typesPath = path.join(root, 'packages/types/src/generated/internal-api.ts');
 const runtimePath = path.join(root, 'packages/api-client/src/generated/internal-api.ts');
+const heyApiOutputDir = path.join(root, 'packages/types/src/generated/hey-api');
 
 const spec = JSON.parse(await readFile(specPath, 'utf8'));
 assert.equal(spec.openapi, '3.1.0', 'the internal contract must use OpenAPI 3.1');
@@ -94,6 +97,43 @@ for (const [name, schema] of Object.entries(schemas)) {
   assertExplicitObjectPolicies(schema, `#/components/schemas/${name}`);
 }
 
+/**
+ * hey-api's own schema/IR normalization drops a `properties` entry whose
+ * value is the literal boolean `false` (JSON Schema's "this key must never be
+ * present" idiom — used across `ProblemDetails`'s discriminator arms to
+ * forbid `errors` outside `validation_failed`) before any `$resolvers` hook
+ * sees the schema, so a resolver has nothing left to react to. Move each
+ * forbidden name onto a vendor-extension array on the same schema object
+ * (which hey-api passes through untouched, like `x-v2board-max-bytes`
+ * elsewhere) so `heyApiObjectResolver` below can still recreate the
+ * rejection. Registered as a `parser.patch.schemas` hook (see
+ * `generateHeyApiOutput`), which hey-api runs on its own bundled copy of the
+ * spec before parsing — the retained `typeExpression`/`zodExpression`
+ * functions read the original `spec` and already handle a literal `false`
+ * property correctly, so nothing needs to stay in sync here.
+ */
+function extractForbiddenProperties(schema) {
+  if (schema === true || schema === false || schema === undefined) return;
+  if (schema.properties) {
+    const forbidden = Object.entries(schema.properties)
+      .filter(([, property]) => property === false)
+      .map(([propertyName]) => propertyName);
+    for (const propertyName of forbidden) delete schema.properties[propertyName];
+    if (forbidden.length > 0) schema['x-v2board-forbidden-properties'] = forbidden;
+    for (const property of Object.values(schema.properties)) extractForbiddenProperties(property);
+  }
+  if (schema.items) extractForbiddenProperties(schema.items);
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    extractForbiddenProperties(schema.additionalProperties);
+  }
+  if (schema.propertyNames && typeof schema.propertyNames === 'object') {
+    extractForbiddenProperties(schema.propertyNames);
+  }
+  for (const keyword of ['oneOf', 'anyOf', 'allOf']) {
+    for (const member of schema[keyword] ?? []) extractForbiddenProperties(member);
+  }
+}
+
 function generatedTypeName(name) {
   return `InternalApi${name}`;
 }
@@ -119,23 +159,9 @@ function semanticRefSiblings(schema) {
   return Object.fromEntries(Object.entries(schema).filter(([name]) => !annotationKeys.has(name)));
 }
 
-function withNullable(schema, render) {
-  if (schema?.nullable !== true) return null;
-  const nonNullable = { ...schema };
-  delete nonNullable.nullable;
-  return render(nonNullable);
-}
-
 function unionType(expressions) {
   const unique = [...new Set(expressions)];
   return unique.length === 1 ? unique[0] : unique.join(' | ');
-}
-
-function intersectionType(expressions) {
-  const unique = [...new Set(expressions)];
-  return unique.length === 1
-    ? unique[0]
-    : unique.map((expression) => `(${expression})`).join(' & ');
 }
 
 function literalType(value) {
@@ -146,109 +172,34 @@ function literalType(value) {
   return JSON.stringify(value);
 }
 
-function objectTypeExpression(schema) {
-  const required = new Set(schema.required ?? []);
-  const properties = Object.entries(schema.properties ?? {})
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(
-      ([name, property]) =>
-        `${JSON.stringify(name)}${required.has(name) ? '' : '?'}: ${typeExpression(property)}`,
-    );
-  const additional = schema.additionalProperties;
-  assert.ok(
-    Object.hasOwn(schema, 'additionalProperties'),
-    'object schemas must declare additionalProperties explicitly',
-  );
-  if (properties.length === 0) {
-    if (additional === false) return emptyObjectType;
-    // Keep recursive JSON-like aliases legal: TypeScript accepts a direct
-    // recursive index signature, while routing the same edge through the
-    // generic `Record` alias is rejected as an immediate circular alias.
-    return `{ [key: string]: ${additional && additional !== true ? typeExpression(additional) : 'unknown'} }`;
-  }
-  // TypeScript cannot precisely express JSON Schema's "known properties plus
-  // a differently typed additional-property set". Keep extensions available
-  // without incorrectly constraining the declared properties.
-  if (additional !== false) properties.push('[key: string]: unknown');
-  return `{ ${properties.join('; ')} }`;
-}
-
-function resolveAllOfObjectMember(schema) {
-  if (schema?.$ref && Object.keys(semanticRefSiblings(schema)).length === 0) {
-    const resolved = schemas[refName(schema.$ref)];
-    return isObjectSchema(resolved) && !resolved.oneOf && !resolved.anyOf && !resolved.allOf
-      ? resolved
-      : null;
-  }
-  return isObjectSchema(schema) && !schema.oneOf && !schema.anyOf && !schema.allOf ? schema : null;
-}
-
 /**
- * utoipa represents flattened Rust structs and tagged-enum payloads as allOf.
- * Intersecting two strict Zod objects is invalid because each side rejects the
- * fields introduced by the other. Merge plain object members into the one
- * closed shape that Serde actually accepts; non-object allOf (notably the
- * RFC 9457 base + tuple discriminator) remains a real intersection.
+ * Operation-level parameter/response schemas are today a small closed set of
+ * scalars, arrays, enums, and plain `$ref`s — see the comment above
+ * `heyApiObjectResolver` below. `nullable`/`const`/`oneOf`/`anyOf`/`allOf`/
+ * OpenAPI-3.1 `type`-array unions and inline object shapes never occur at
+ * this level (component-schema recursion, discriminated unions, and allOf
+ * merging are entirely hey-api's job now); assert that rather than carrying
+ * unreachable rendering branches for them.
  */
-function mergedAllOfObject(schema) {
-  if (!schema?.allOf?.length) return null;
-  const members = schema.allOf.map(resolveAllOfObjectMember);
-  if (members.some((member) => member === null)) return null;
-
-  const properties = {};
-  const required = new Set();
-  let additionalProperties = true;
-  for (const member of members) {
-    for (const [name, property] of Object.entries(member.properties ?? {})) {
-      const existing = properties[name];
-      properties[name] =
-        existing === undefined || JSON.stringify(existing) === JSON.stringify(property)
-          ? property
-          : { allOf: [existing, property] };
-    }
-    for (const name of member.required ?? []) required.add(name);
-    const additional = member.additionalProperties;
-    if (additional === false) additionalProperties = false;
-    else if (additionalProperties !== false && additional !== true) {
-      additionalProperties =
-        additionalProperties === true ? additional : { allOf: [additionalProperties, additional] };
-    }
-  }
-  return {
-    type: 'object',
-    properties,
-    required: [...required],
-    additionalProperties,
-  };
-}
-
 function typeExpression(schema) {
   if (schema === true || schema === undefined) return 'unknown';
   if (schema === false) return 'never';
   assert.ok(schema && typeof schema === 'object', `invalid OpenAPI schema: ${schema}`);
-
-  const nullable = withNullable(schema, (nonNullable) => typeExpression(nonNullable));
-  if (nullable) return `${nullable} | null`;
+  assert.equal(schema.nullable, undefined, 'legacy OpenAPI 3.0 nullable is unsupported here');
 
   if (schema.$ref) {
-    const reference = generatedTypeName(refName(schema.$ref));
-    const siblings = semanticRefSiblings(schema);
-    return Object.keys(siblings).length === 0
-      ? reference
-      : intersectionType([reference, typeExpression(siblings)]);
+    assert.equal(
+      Object.keys(semanticRefSiblings(schema)).length,
+      0,
+      'operation-level $ref schemas with semantic siblings are unsupported here',
+    );
+    return generatedTypeName(refName(schema.$ref));
   }
-  if (Object.hasOwn(schema, 'const')) return literalType(schema.const);
-  if (schema.oneOf) return unionType(schema.oneOf.map(typeExpression));
-  if (schema.anyOf) return unionType(schema.anyOf.map(typeExpression));
-  if (schema.allOf) {
-    const merged = mergedAllOfObject(schema);
-    return merged
-      ? objectTypeExpression(merged)
-      : intersectionType(schema.allOf.map(typeExpression));
-  }
-  if (Array.isArray(schema.type)) {
-    return unionType(schema.type.map((type) => typeExpression({ ...schema, type })));
-  }
+  assert.equal(Object.hasOwn(schema, 'const'), false, 'operation-level const schemas are unsupported here');
+  assert.equal(schema.oneOf, undefined, 'operation-level oneOf schemas are unsupported here');
+  assert.equal(schema.anyOf, undefined, 'operation-level anyOf schemas are unsupported here');
+  assert.equal(schema.allOf, undefined, 'operation-level allOf schemas are unsupported here');
+  assert.ok(!Array.isArray(schema.type), 'operation-level OpenAPI 3.1 type-array unions are unsupported here');
   if (schema.enum) return unionType(schema.enum.map(literalType));
 
   switch (schema.type) {
@@ -263,12 +214,13 @@ function typeExpression(schema) {
       return schema.format === 'binary' ? 'Blob' : 'string';
     case 'array':
       return `Array<${typeExpression(schema.items)}>`;
-    case 'object':
-      return objectTypeExpression(schema);
     case undefined:
-      return Object.keys(semanticRefSiblings(schema)).length === 0
-        ? 'unknown'
-        : objectTypeExpression(schema);
+      assert.equal(
+        Object.keys(semanticRefSiblings(schema)).length,
+        0,
+        'operation-level typeless object schemas are unsupported here',
+      );
+      return 'unknown';
     default:
       throw new Error(`unsupported OpenAPI type schema: ${JSON.stringify(schema)}`);
   }
@@ -280,12 +232,6 @@ function zodUnion(expressions) {
   return `z.union([${unique.join(', ')}])`;
 }
 
-function zodIntersection(expressions) {
-  const unique = [...new Set(expressions)];
-  if (unique.length === 1) return unique[0];
-  return unique.slice(1).reduce((left, right) => `${left}.and(${right})`, unique[0]);
-}
-
 function zodLiteral(value) {
   assert.ok(
     value === null || ['string', 'number', 'boolean'].includes(typeof value),
@@ -294,63 +240,26 @@ function zodLiteral(value) {
   return value === null ? 'z.null()' : `z.literal(${JSON.stringify(value)})`;
 }
 
-function zodObjectExpression(schema) {
-  const required = new Set(schema.required ?? []);
-  const properties = Object.entries(schema.properties ?? {})
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, property]) => {
-      const validator = zodExpression(property);
-      return `  ${JSON.stringify(name)}: ${validator}${required.has(name) ? '' : '.optional()'},`;
-    });
-  const shape = `{
-${properties.join('\n')}
-}`;
-  assert.ok(
-    Object.hasOwn(schema, 'additionalProperties'),
-    'object schemas must declare additionalProperties explicitly',
-  );
-  const additional = schema.additionalProperties;
-  if (properties.length === 0 && additional !== false) {
-    return `z.record(z.string(), ${additional && additional !== true ? zodExpression(additional) : 'z.unknown()'})`;
-  }
-  if (additional === false) return `z.strictObject(${shape})`;
-  if (additional && additional !== true) {
-    return `z.object(${shape}).catchall(${zodExpression(additional)})`;
-  }
-  return `z.object(${shape}).catchall(z.unknown())`;
-}
-
+/** Mirrors typeExpression's narrowed scope — see the comment above it. */
 function zodExpression(schema) {
   if (schema === true || schema === undefined) return 'z.unknown()';
   if (schema === false) return 'z.never()';
   assert.ok(schema && typeof schema === 'object', `invalid OpenAPI schema: ${schema}`);
-
-  const nullable = withNullable(schema, (nonNullable) => zodExpression(nonNullable));
-  if (nullable) return `${nullable}.nullable()`;
+  assert.equal(schema.nullable, undefined, 'legacy OpenAPI 3.0 nullable is unsupported here');
 
   if (schema.$ref) {
-    const reference = generatedSchemaName(refName(schema.$ref));
-    const siblings = semanticRefSiblings(schema);
-    return Object.keys(siblings).length === 0
-      ? reference
-      : `${reference}.and(${zodExpression(siblings)})`;
+    assert.equal(
+      Object.keys(semanticRefSiblings(schema)).length,
+      0,
+      'operation-level $ref schemas with semantic siblings are unsupported here',
+    );
+    return generatedSchemaName(refName(schema.$ref));
   }
-  if (Object.hasOwn(schema, 'const')) return zodLiteral(schema.const);
-  if (schema.oneOf) {
-    const members = schema.oneOf.map(zodExpression);
-    if (schema.discriminator?.propertyName && members.length > 1) {
-      return `z.discriminatedUnion(${JSON.stringify(schema.discriminator.propertyName)}, [${members.join(', ')}])`;
-    }
-    return zodUnion(members);
-  }
-  if (schema.anyOf) return zodUnion(schema.anyOf.map(zodExpression));
-  if (schema.allOf) {
-    const merged = mergedAllOfObject(schema);
-    return merged ? zodObjectExpression(merged) : zodIntersection(schema.allOf.map(zodExpression));
-  }
-  if (Array.isArray(schema.type)) {
-    return zodUnion(schema.type.map((type) => zodExpression({ ...schema, type })));
-  }
+  assert.equal(Object.hasOwn(schema, 'const'), false, 'operation-level const schemas are unsupported here');
+  assert.equal(schema.oneOf, undefined, 'operation-level oneOf schemas are unsupported here');
+  assert.equal(schema.anyOf, undefined, 'operation-level anyOf schemas are unsupported here');
+  assert.equal(schema.allOf, undefined, 'operation-level allOf schemas are unsupported here');
+  assert.ok(!Array.isArray(schema.type), 'operation-level OpenAPI 3.1 type-array unions are unsupported here');
   if (schema.enum) return zodUnion(schema.enum.map(zodLiteral));
 
   let expression;
@@ -378,14 +287,13 @@ function zodExpression(schema) {
     case 'array':
       expression = `z.array(${zodExpression(schema.items)})`;
       break;
-    case 'object':
-      expression = zodObjectExpression(schema);
-      break;
     case undefined:
-      expression =
-        Object.keys(semanticRefSiblings(schema)).length === 0
-          ? 'z.unknown()'
-          : zodObjectExpression(schema);
+      assert.equal(
+        Object.keys(semanticRefSiblings(schema)).length,
+        0,
+        'operation-level typeless object schemas are unsupported here',
+      );
+      expression = 'z.unknown()';
       break;
     default:
       throw new Error(`unsupported OpenAPI zod schema: ${JSON.stringify(schema)}`);
@@ -421,105 +329,6 @@ function zodExpression(schema) {
     if (schema.maxItems !== undefined) expression += `.max(${schema.maxItems})`;
   }
   return expression;
-}
-
-function schemaDependencies(schema, output = new Set()) {
-  if (!schema || typeof schema !== 'object') return output;
-  if (schema.$ref) output.add(refName(schema.$ref));
-  if (schema.items) schemaDependencies(schema.items, output);
-  if (schema.additionalProperties && schema.additionalProperties !== true) {
-    schemaDependencies(schema.additionalProperties, output);
-  }
-  for (const member of [
-    ...(schema.oneOf ?? []),
-    ...(schema.anyOf ?? []),
-    ...(schema.allOf ?? []),
-  ]) {
-    schemaDependencies(member, output);
-  }
-  for (const property of Object.values(schema.properties ?? {})) {
-    schemaDependencies(property, output);
-  }
-  return output;
-}
-
-function orderedSchemaGroups() {
-  const names = Object.keys(schemas).sort();
-  const dependencies = new Map(
-    names.map((name) => [
-      name,
-      [...schemaDependencies(schemas[name])]
-        .filter((dependency) => Object.hasOwn(schemas, dependency))
-        .sort(),
-    ]),
-  );
-
-  // Tarjan SCCs let recursive Rust DTOs (for example an order containing
-  // surplus orders) become z.lazy component schemas without making every
-  // generated validator lazy or weakening it to unknown.
-  let nextIndex = 0;
-  const indices = new Map();
-  const lowLinks = new Map();
-  const stack = [];
-  const stacked = new Set();
-  const components = [];
-
-  function connect(name) {
-    indices.set(name, nextIndex);
-    lowLinks.set(name, nextIndex);
-    nextIndex += 1;
-    stack.push(name);
-    stacked.add(name);
-
-    for (const dependency of dependencies.get(name)) {
-      if (!indices.has(dependency)) {
-        connect(dependency);
-        lowLinks.set(name, Math.min(lowLinks.get(name), lowLinks.get(dependency)));
-      } else if (stacked.has(dependency)) {
-        lowLinks.set(name, Math.min(lowLinks.get(name), indices.get(dependency)));
-      }
-    }
-
-    if (lowLinks.get(name) !== indices.get(name)) return;
-    const component = [];
-    while (stack.length > 0) {
-      const member = stack.pop();
-      stacked.delete(member);
-      component.push(member);
-      if (member === name) break;
-    }
-    components.push(component.sort());
-  }
-
-  for (const name of names) if (!indices.has(name)) connect(name);
-
-  const componentByName = new Map();
-  components.forEach((component, index) => {
-    for (const name of component) componentByName.set(name, index);
-  });
-  const ordered = [];
-  const visited = new Set();
-  function visitComponent(index) {
-    if (visited.has(index)) return;
-    visited.add(index);
-    const component = components[index];
-    const dependencyComponents = new Set();
-    for (const name of component) {
-      for (const dependency of dependencies.get(name)) {
-        const dependencyIndex = componentByName.get(dependency);
-        if (dependencyIndex !== index) dependencyComponents.add(dependencyIndex);
-      }
-    }
-    for (const dependencyIndex of [...dependencyComponents].sort((left, right) => left - right)) {
-      visitComponent(dependencyIndex);
-    }
-    ordered.push({
-      names: component,
-      recursive: component.length > 1 || dependencies.get(component[0]).includes(component[0]),
-    });
-  }
-  for (const name of names) visitComponent(componentByName.get(name));
-  return ordered;
 }
 
 function contentEntries(content) {
@@ -732,15 +541,238 @@ function successResponsesType(responses) {
     .join('; ')} }`;
 }
 
+// Component-schema type/Zod compilation (recursion, discriminated unions,
+// allOf merging, additionalProperties policy) is delegated to
+// `@hey-api/openapi-ts`, driven with the resolvers below. Everything above
+// this point (`typeExpression`/`zodExpression` and friends) only still fires
+// for operation-level inline parameter/response schemas, which today are a
+// small closed set of scalars with no recursion or unions — see
+// docs/adr/0009-hand-written-openapi-codegen-vs-off-the-shelf.md.
+
+/**
+ * hey-api's default object resolver (`additionalPropertiesNode` in its
+ * bundled `dist/init-*.mjs`, corresponding to
+ * `src/plugins/zod/v4/toAst/object.ts`) skips `additionalProperties`
+ * entirely once a schema has named properties. Two distinct bugs follow:
+ * `additionalProperties: false` silently produces a permissive
+ * `z.object(...)` with no `.strict()` (the source spec's boolean `false` is
+ * also normalized into `{ type: "never" }` inside hey-api's own IR before
+ * resolvers see it — an internal implementation detail, not part of the
+ * `$resolvers` type contract, that could change silently in a future hey-api
+ * release without a compile error); and an explicitly open schema with named
+ * properties (e.g. `ProblemDetails`) instead gets a plain `z.object(...)`,
+ * which zod *strips* unknown keys from by default — silently disagreeing
+ * with its own generated `[key: string]: unknown` TypeScript type, which
+ * promises they survive. Both are fixed below without touching hey-api's
+ * already-correct handling of property-less open maps (`z.record(...)`).
+ */
+function heyApiObjectResolver(ctx) {
+  const { schema, nodes, $ } = ctx;
+  const z = ctx.plugin.imports.z;
+  let base = nodes.base(ctx);
+  const additional = schema.additionalProperties;
+  const closed =
+    additional === false || (additional && typeof additional === 'object' && additional.type === 'never');
+  const hasProperties = Object.keys(schema.properties ?? {}).length > 0;
+  // `extractForbiddenProperties` above moved every literal-`false`-valued
+  // property (hey-api would otherwise drop it before this resolver ever
+  // runs) onto this vendor-extension array. Re-add each as an explicit
+  // optional-never key so the key is rejected instead of silently passed
+  // through by `.catchall()` below (types.gen.ts stays imprecise for these
+  // keys — typed `unknown` via the surrounding index signature rather than
+  // `never` — since no consumer reads a forbidden key on a specific
+  // discriminator arm).
+  const forbiddenNames = schema['x-v2board-forbidden-properties'] ?? [];
+  if (forbiddenNames.length > 0) {
+    let extension = $.object();
+    for (const name of forbiddenNames) {
+      let never = $(z).attr('never').call();
+      never = never.attr('optional').call();
+      extension = extension.prop(name, never);
+    }
+    base = base.attr('extend').call(extension);
+  }
+  // A closed, property-less object (`{}`) already renders as hey-api's own
+  // `z.record(z.string(), z.never())` (no key can validly exist), which has
+  // no `.strict()` method; only a real `z.object(...)` base needs it.
+  if (closed) return hasProperties ? base.attr('strict').call() : base;
+  if (!hasProperties) return base;
+  const open =
+    additional === true || (additional && typeof additional === 'object' && additional.type === 'unknown');
+  assert.ok(
+    open,
+    'a schema-typed additionalProperties combined with named properties has no hey-api $resolvers catchall support here',
+  );
+  return base.attr('catchall').call($(z).attr('unknown').call());
+}
+
+/**
+ * hey-api coerces every `format: int64`/`uint64` number to `z.coerce.bigint()`
+ * with no plugin-level opt-out (`shouldCoerceToBigInt` in its bundled source
+ * is a hard-coded format check). The rest of this codebase — hand-written
+ * entity types, app code, JSON (de)serialization — assumes `number` for every
+ * integer field including int64, matching the old generator's behavior, so
+ * bigint coercion must be suppressed explicitly. int32 and unformatted
+ * numbers are left to hey-api's own (already-correct, non-bigint) default.
+ */
+function heyApiNumberResolver(ctx) {
+  const { schema, $ } = ctx;
+  if (schema.format !== 'int64' && schema.format !== 'uint64') return undefined;
+  const z = ctx.plugin.imports.z;
+  let node = $(z).attr('number').call();
+  if (schema.type === 'integer') node = node.attr('int').call();
+  if (schema.minimum !== undefined) node = node.attr('min').call($.literal(schema.minimum));
+  if (schema.maximum !== undefined) node = node.attr('max').call($.literal(schema.maximum));
+  if (schema.exclusiveMinimum !== undefined) node = node.attr('gt').call($.literal(schema.exclusiveMinimum));
+  if (schema.exclusiveMaximum !== undefined) node = node.attr('lt').call($.literal(schema.exclusiveMaximum));
+  if (schema.multipleOf !== undefined) node = node.attr('multipleOf').call($.literal(schema.multipleOf));
+  return node;
+}
+
+/**
+ * `x-v2board-max-bytes` (a v2board vendor extension: JSON Schema's
+ * `maxLength` counts Unicode characters, never UTF-8 bytes, and the Rust
+ * backend's real limits are byte-based) has no hey-api extension point today
+ * because none of the 207 component schemas currently carry it — every
+ * occurrence in the live spec is on an inline operation parameter, compiled
+ * by the retained `zodExpression` above instead. This resolver exists so a
+ * future component-schema field carrying the extension is still enforced
+ * rather than silently unvalidated.
+ */
+function heyApiStringResolver(ctx) {
+  const { schema, nodes, $ } = ctx;
+  const constNode = nodes.const(ctx);
+  if (constNode) {
+    ctx.chain.current = constNode;
+  } else {
+    const baseNode = nodes.base(ctx);
+    if (baseNode) ctx.chain.current = baseNode;
+    const formatNode = nodes.format(ctx);
+    if (formatNode) ctx.chain.current = formatNode;
+    const lengthNode = nodes.length(ctx);
+    if (lengthNode) ctx.chain.current = lengthNode;
+    else {
+      const minLengthNode = nodes.minLength(ctx);
+      if (minLengthNode) ctx.chain.current = minLengthNode;
+      const maxLengthNode = nodes.maxLength(ctx);
+      if (maxLengthNode) ctx.chain.current = maxLengthNode;
+    }
+    const patternNode = nodes.pattern(ctx);
+    if (patternNode) ctx.chain.current = patternNode;
+  }
+  const maxBytes = schema['x-v2board-max-bytes'];
+  if (typeof maxBytes === 'number') {
+    const predicate = $.func((f) => {
+      f.param('value');
+      f.do(
+        $.binary(
+          $.new('TextEncoder').args().attr('encode').call($('value')).attr('length'),
+          '<=',
+          $.literal(maxBytes),
+        ).return(),
+      );
+    });
+    ctx.chain.current = ctx.chain.current
+      .attr('refine')
+      .call(predicate, $.object().prop('error', $.literal(`Must be at most ${maxBytes} UTF-8 bytes`)));
+  }
+  return ctx.chain.current;
+}
+
+async function generateHeyApiOutput() {
+  const outputDir = check ? await mkdtemp(path.join(tmpdir(), 'v2board-hey-api-')) : heyApiOutputDir;
+  await createClient({
+    // A clone, not `spec` itself: `extractForbiddenProperties` mutates the
+    // schema it's given in place, and the retained `typeExpression`/
+    // `zodExpression` functions must keep seeing the original spec shape.
+    input: structuredClone(spec),
+    output: outputDir,
+    // hey-api's documented `parser.patch.schemas` hook runs on its own
+    // bundled copy of the input, before parsing/IR construction — the same
+    // point a hand-rolled preprocessing pass would need to run at, without a
+    // scratch spec file on disk.
+    parser: { patch: { schemas: (_name, schema) => extractForbiddenProperties(schema) } },
+    plugins: [
+      '@hey-api/typescript',
+      {
+        name: 'zod',
+        requests: false,
+        responses: false,
+        $resolvers: {
+          object: heyApiObjectResolver,
+          number: heyApiNumberResolver,
+          string: heyApiStringResolver,
+        },
+      },
+    ],
+  });
+  await rm(path.join(outputDir, 'index.ts'), { force: true });
+  const typesSource = await readFile(path.join(outputDir, 'types.gen.ts'), 'utf8');
+  const zodSource = await readFile(path.join(outputDir, 'zod.gen.ts'), 'utf8');
+  if (check) await rm(outputDir, { recursive: true, force: true });
+  return { typesSource, zodSource };
+}
+
+function normalizedKey(name) {
+  return name.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
+}
+
+/**
+ * hey-api applies its own acronym-casing normalization to component schema
+ * names (for example `AlipayF2FConfig` becomes `AlipayF2fConfig`), so its
+ * generated export names cannot be predicted by a fixed string transform.
+ * Match them by normalized (case- and punctuation-insensitive) identity
+ * instead, so `internalApi<Name>Schema`/`InternalApi<Name>` keep the OpenAPI
+ * document's own naming convention regardless of hey-api's internal choice.
+ */
+function buildGeneratedNameIndex(source, pattern, unwrap) {
+  const byNormalizedName = new Map();
+  for (const match of source.matchAll(pattern)) {
+    const exported = match[1];
+    const key = normalizedKey(unwrap(exported));
+    assert.ok(
+      !byNormalizedName.has(key),
+      `ambiguous generated export name collision at ${exported}`,
+    );
+    byNormalizedName.set(key, exported);
+  }
+  return function lookup(schemaName) {
+    const found = byNormalizedName.get(normalizedKey(schemaName));
+    assert.ok(found, `no hey-api generated export found for schema ${schemaName}`);
+    return found;
+  };
+}
+
+const { typesSource: heyApiTypesSource, zodSource: heyApiZodSource } = await generateHeyApiOutput();
+const heyApiTypeName = buildGeneratedNameIndex(heyApiTypesSource, /^export type (\w+) =/gm, (name) => name);
+const heyApiZodName = buildGeneratedNameIndex(
+  heyApiZodSource,
+  /^export const (\w+) =/gm,
+  (name) => name.replace(/^z/, ''),
+);
+
 function renderTypes() {
+  const schemaNames = Object.keys(schemas).sort();
   const blocks = [
     '// @generated by scripts/generate-internal-api-contract.mjs; do not edit.',
     '// Source: backend/rust/crates/api-contract.',
+    schemaNames.length === 0
+      ? ''
+      : `import type { ${schemaNames.map(heyApiTypeName).join(', ')} } from './hey-api/types.gen';`,
+    // Component-schema Zod validators are re-exported from here (not just
+    // types) so `@v2board/api-client`'s generated runtime file can reach them
+    // through the existing root `@v2board/types` import, without a deep
+    // subpath export.
+    schemaNames.length === 0
+      ? ''
+      : `import { ${schemaNames.map(heyApiZodName).join(', ')} } from './hey-api/zod.gen';`,
     '',
   ];
-  const schemaNames = Object.keys(schemas).sort();
   for (const name of schemaNames) {
-    blocks.push(`export type ${generatedTypeName(name)} = ${typeExpression(schemas[name])};`, '');
+    blocks.push(`export type ${generatedTypeName(name)} = ${heyApiTypeName(name)};`, '');
+  }
+  for (const name of schemaNames) {
+    blocks.push(`export const ${generatedSchemaName(name)} = ${heyApiZodName(name)};`, '');
   }
   if (schemaNames.length === 0) {
     blocks.push(`export type InternalApiSchemaMap = ${emptyObjectType};`, '');
@@ -827,21 +859,24 @@ function successResponsesRuntime(responses) {
 }
 
 function renderRuntime() {
+  const schemaNames = Object.keys(schemas).sort();
   const blocks = [
     '// @generated by scripts/generate-internal-api-contract.mjs; do not edit.',
     '// Source: backend/rust/crates/api-contract.',
     "import { z } from 'zod';",
-    "import type * as InternalApiTypes from '@v2board/types';",
+    // Component-schema Zod validators live in @v2board/types (their
+    // hey-api-generated source sits under packages/types/src/generated/hey-api,
+    // alongside the compile-time types) and are re-exported through the
+    // package's existing root entry point. Operation schemas below reference
+    // them by their generatedSchemaName identifier, and this file re-exports
+    // the same identifiers so existing direct consumers of
+    // `./generated/internal-api` keep working unchanged.
+    schemaNames.length === 0
+      ? ''
+      : `import { ${schemaNames.map(generatedSchemaName).join(', ')} } from '@v2board/types';`,
+    schemaNames.length === 0 ? '' : `export { ${schemaNames.map(generatedSchemaName).join(', ')} };`,
     '',
   ];
-  for (const group of orderedSchemaGroups()) {
-    for (const name of group.names) {
-      const declaration = group.recursive
-        ? `export const ${generatedSchemaName(name)}: z.ZodType<InternalApiTypes.${generatedTypeName(name)}> = z.lazy(() => ${zodExpression(schemas[name])});`
-        : `export const ${generatedSchemaName(name)} = ${zodExpression(schemas[name])};`;
-      blocks.push(declaration, '');
-    }
-  }
   blocks.push('export const internalApiOperations = {');
   for (const operation of operations()) {
     blocks.push(`  ${JSON.stringify(operation.id)}: {`);
@@ -892,5 +927,7 @@ async function emit(file, content) {
   await writeFile(file, content);
 }
 
+await emit(path.join(heyApiOutputDir, 'types.gen.ts'), heyApiTypesSource);
+await emit(path.join(heyApiOutputDir, 'zod.gen.ts'), heyApiZodSource);
 await emit(typesPath, renderTypes());
 await emit(runtimePath, renderRuntime());
